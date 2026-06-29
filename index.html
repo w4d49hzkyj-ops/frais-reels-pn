@@ -14,12 +14,12 @@
   *{-webkit-tap-highlight-color:transparent;}
   input,select,textarea{font-family:inherit;}
   #boot{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
-    flex-direction:column;color:#6B85A8;font-family:-apple-system,sans-serif;padding:24px;text-align:center;}
+    flex-direction:column;color:#6B85A8;font-family:-apple-system,sans-serif;padding:24px;text-align:center;z-index:1;}
   #boot .spin{width:36px;height:36px;border:3px solid #1F3455;border-top-color:#D4A017;
     border-radius:50%;animation:s 0.8s linear infinite;margin-bottom:16px;}
   @keyframes s{to{transform:rotate(360deg)}}
   #err{display:none;position:fixed;inset:0;background:#0B1220;color:#F0F4FA;
-    font-family:-apple-system,sans-serif;padding:24px;overflow:auto;box-sizing:border-box;}
+    font-family:-apple-system,sans-serif;padding:24px;overflow:auto;box-sizing:border-box;z-index:9999;}
   #err h2{color:#EF4444;font-size:16px;}
   #err pre{background:#131D2E;border:1px solid #1F3455;border-radius:8px;padding:12px;
     font-size:11px;white-space:pre-wrap;color:#F59E0B;}
@@ -29,81 +29,31 @@
 </head>
 <body>
 <div id="root"></div>
-<div id="boot"><div class="spin"></div><div>Chargement de l'application…</div>
-  <div style="font-size:11px;margin-top:8px;opacity:0.7">Si rien ne s'affiche après 10 s, touchez pour recharger</div></div>
+<div id="boot"><div class="spin"></div><div>Chargement…</div></div>
 <div id="err"><h2>⚠️ Erreur au démarrage</h2>
-  <p style="font-size:12px;color:#6B85A8">Détail technique (faites une capture et envoyez-la) :</p>
   <pre id="errmsg"></pre>
-  <button onclick="location.reload()">Recharger</button>
-</div>
+  <button onclick="location.reload()">Recharger</button></div>
 <script>
-// Affiche toute erreur à l'écran au lieu d'un écran noir
 window.__showErr = function(msg){
-  document.getElementById("boot").style.display="none";
+  var b=document.getElementById("boot"); if(b) b.style.display="none";
   document.getElementById("err").style.display="block";
   document.getElementById("errmsg").textContent = String(msg);
 };
-window.addEventListener("error", function(e){
-  window.__showErr((e.message||"erreur")+"\n"+(e.filename||"")+":"+(e.lineno||""));
-});
+window.addEventListener("error", function(e){ window.__showErr((e.message||"erreur")); });
 window.addEventListener("unhandledrejection", function(e){
-  window.__showErr("Promesse rejetée : "+(e.reason&&e.reason.message||e.reason));
-});
-// Recharge si on touche l'écran de boot (au cas où Babel traîne)
-document.getElementById("boot").addEventListener("click", function(){ location.reload(); });
-
-// ─── SHIM STOCKAGE (localStorage) ───
+  window.__showErr("Promesse : "+(e.reason&&e.reason.message||e.reason)); });
+// Stockage local
 window.storage = {
-  get: async (key) => { const v = localStorage.getItem("fr-pnt:"+key);
-    if (v === null) throw new Error("not found"); return { key, value: v }; },
-  set: async (key, value) => { localStorage.setItem("fr-pnt:"+key, value); return { key, value }; },
-  delete: async (key) => { localStorage.removeItem("fr-pnt:"+key); return { key, deleted: true }; },
+  get: async (k) => { var v=localStorage.getItem("fr-pnt:"+k);
+    if(v===null) throw new Error("not found"); return {key:k,value:v}; },
+  set: async (k,v) => { localStorage.setItem("fr-pnt:"+k,v); return {key:k,value:v}; },
+  delete: async (k) => { localStorage.removeItem("fr-pnt:"+k); return {key:k,deleted:true}; },
 };
-
-// Chargement séquentiel des librairies avec source de secours
-function loadScript(urls){
-  return new Promise(function(resolve, reject){
-    var i = 0;
-    function tryNext(){
-      if (i >= urls.length){ reject(new Error("Impossible de charger : "+urls[0])); return; }
-      var s = document.createElement("script");
-      s.src = urls[i];
-      s.onload = function(){ resolve(); };
-      s.onerror = function(){ i++; tryNext(); };
-      document.head.appendChild(s);
-    }
-    tryNext();
-  });
-}
-
-(async function(){
-  try {
-    await loadScript([
-      "https://unpkg.com/react@18/umd/react.production.min.js",
-      "https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js",
-      "https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"
-    ]);
-    await loadScript([
-      "https://unpkg.com/react-dom@18/umd/react-dom.production.min.js",
-      "https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js",
-      "https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"
-    ]);
-    await loadScript([
-      "https://unpkg.com/@babel/standalone/babel.min.js",
-      "https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js",
-      "https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.26.4/babel.min.js"
-    ]);
-    // Transpiler et exécuter le code JSX
-    var code = document.getElementById("app-code").textContent;
-    var out = Babel.transform(code, { presets: ["react"] }).code;
-    new Function(out)();
-    document.getElementById("boot").style.display = "none";
-  } catch(e){
-    window.__showErr("Chargement : "+(e.message||e));
-  }
-})();
 </script>
-<script type="text/plain" id="app-code">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script type="text/babel" data-presets="react">
 const { useState, useRef, useCallback, useEffect } = React;
 
 // ─── PALETTE ────────────────────────────────────────────────────
@@ -2167,7 +2117,9 @@ function DossierFiscal(props) {
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+const __root = ReactDOM.createRoot(document.getElementById("root"));
+__root.render(React.createElement(App));
+document.getElementById("boot").style.display = "none";
 </script>
 </body>
 </html>
