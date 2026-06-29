@@ -1,0 +1,2111 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0B1220">
+<title>Frais Réels PNT — SNPL Mémento Fiscal</title>
+<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>✈️</text></svg>">
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  html,body{margin:0;padding:0;background:#0B1220;}
+  #root{min-height:100vh;}
+  *{-webkit-tap-highlight-color:transparent;}
+  input{font-family:inherit;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+// ─── SHIM STOCKAGE ───────────────────────────────────────────────
+// Remplace window.storage (API Claude) par localStorage du navigateur.
+// Les données restent sur CET appareil/navigateur.
+window.storage = {
+  get: async (key) => {
+    const v = localStorage.getItem("fr-pnt:" + key);
+    if (v === null) throw new Error("not found");
+    return { key, value: v };
+  },
+  set: async (key, value) => {
+    localStorage.setItem("fr-pnt:" + key, value);
+    return { key, value };
+  },
+  delete: async (key) => {
+    localStorage.removeItem("fr-pnt:" + key);
+    return { key, deleted: true };
+  },
+};
+</script>
+<script type="text/babel" data-presets="react">
+const { useState, useRef, useCallback, useEffect } = React;
+
+// ─── PALETTE ────────────────────────────────────────────────────
+const C = {
+  bg:"#0B1220", surface:"#131D2E", alt:"#1A2742",
+  border:"#1F3455", gold:"#D4A017", white:"#F0F4FA",
+  muted:"#6B85A8", blue:"#3B82F6", green:"#22C55E",
+  amber:"#F59E0B", red:"#EF4444",
+};
+
+// ─── BASE IATA ───────────────────────────────────────────────────
+// [nom, pays, zoneEuro (bool), taux (€)]
+const IATA = {
+  ORY:["Paris Orly","France",true,177], CDG:["Paris CDG","France",true,177],
+  LYS:["Lyon","France",true,177], MRS:["Marseille","France",true,177],
+  NCE:["Nice","France",true,177], TLS:["Toulouse","France",true,177],
+  BOD:["Bordeaux","France",true,177], NTE:["Nantes","France",true,177],
+  LIL:["Lille","France",true,177], SXB:["Strasbourg","France",true,177],
+  MPL:["Montpellier","France",true,177], GNB:["Grenoble","France",true,177],
+  RNS:["Rennes","France",true,177], BES:["Brest","France",true,177],
+  AJA:["Ajaccio","France",true,177], BIA:["Bastia","France",true,177],
+  FSC:["Figari","France",true,177], PUF:["Pau","France",true,177],
+  XLN:["Positionnement","France",true,177],
+  // Maroc (Zone Euro DLF 1a)
+  RAK:["Marrakech","Maroc",true,175], CMN:["Casablanca","Maroc",true,175],
+  AGA:["Agadir","Maroc",true,175], TNG:["Tanger","Maroc",true,175],
+  RBA:["Rabat","Maroc",true,175], FEZ:["Fès","Maroc",true,175],
+  NDR:["Nador","Maroc",true,175],
+  // Tunisie (Zone Euro DLF 1a)
+  TUN:["Tunis","Tunisie",true,125], MIR:["Monastir","Tunisie",true,125],
+  DJE:["Djerba","Tunisie",true,125], SFA:["Sfax","Tunisie",true,125],
+  TOE:["Tozeur","Tunisie",true,125],
+  // Algérie (Zone Euro DLF 1a)
+  ALG:["Alger","Algérie",true,141], ORN:["Oran","Algérie",true,141],
+  AAE:["Annaba","Algérie",true,141], CZL:["Constantine","Algérie",true,141],
+  // Espagne
+  MAD:["Madrid","Espagne",true,177], BCN:["Barcelone","Espagne",true,177],
+  PMI:["Palma","Espagne",true,177], AGP:["Malaga","Espagne",true,177],
+  IBZ:["Ibiza","Espagne",true,177], TFS:["Ténérife Sud","Espagne",true,177],
+  TFN:["Ténérife Nord","Espagne",true,177], LPA:["Las Palmas","Espagne",true,177],
+  SVQ:["Séville","Espagne",true,177], ACE:["Lanzarote","Espagne",true,177],
+  FUE:["Fuerteventura","Espagne",true,177], VLC:["Valence","Espagne",true,177],
+  // Italie
+  FCO:["Rome FCO","Italie",true,177], MXP:["Milan MXP","Italie",true,177],
+  LIN:["Milan Linate","Italie",true,177], VCE:["Venise","Italie",true,177],
+  PMO:["Palerme","Italie",true,177], NAP:["Naples","Italie",true,177],
+  BRI:["Bari","Italie",true,177], CTA:["Catane","Italie",true,177],
+  // Portugal
+  LIS:["Lisbonne","Portugal",true,177], OPO:["Porto","Portugal",true,177],
+  FAO:["Faro","Portugal",true,177],
+  // Pays-Bas / Belgique
+  AMS:["Amsterdam","Pays-Bas",true,177], EIN:["Eindhoven","Pays-Bas",true,177],
+  BRU:["Bruxelles","Belgique",true,177], CRL:["Charleroi","Belgique",true,177],
+  // Allemagne
+  FRA:["Francfort","Allemagne",true,177], MUC:["Munich","Allemagne",true,177],
+  BER:["Berlin","Allemagne",true,177], DUS:["Düsseldorf","Allemagne",true,177],
+  HAM:["Hambourg","Allemagne",true,177], STR:["Stuttgart","Allemagne",true,177],
+  // Grèce
+  ATH:["Athènes","Grèce",true,177], SKG:["Thessalonique","Grèce",true,177],
+  HER:["Héraklion","Grèce",true,177], RHO:["Rhodes","Grèce",true,177],
+  JMK:["Mykonos","Grèce",true,177], CFU:["Corfou","Grèce",true,177],
+  // Autriche / Irlande / Finlande
+  VIE:["Vienne","Autriche",true,177], INN:["Innsbruck","Autriche",true,177],
+  DUB:["Dublin","Irlande",true,177], HEL:["Helsinki","Finlande",true,177],
+  LUX:["Luxembourg","Luxembourg",true,177],
+  // UK (Zone Euro DLF 1a)
+  LHR:["Londres LHR","Grande-Bretagne",true,246],
+  LGW:["Londres LGW","Grande-Bretagne",true,246],
+  STN:["Londres STN","Grande-Bretagne",true,246],
+  MAN:["Manchester","Grande-Bretagne",true,246],
+  EDI:["Édimbourg","Grande-Bretagne",true,246],
+  // Suisse (Zone Euro DLF 1a)
+  GVA:["Genève","Suisse",true,247], ZRH:["Zürich","Suisse",true,247],
+  // Danemark / Norvège / Suède (Zone Euro DLF 1a)
+  CPH:["Copenhague","Danemark",true,289],
+  OSL:["Oslo","Norvège",true,230], BGO:["Bergen","Norvège",true,230],
+  ARN:["Stockholm","Suède",true,177],
+  // Est Europe (Zone Euro DLF 1a)
+  WAW:["Varsovie","Pologne",true,175], BUD:["Budapest","Hongrie",true,175],
+  PRG:["Prague","Tchèque",true,180], OTP:["Bucarest","Roumanie",true,160],
+  SOF:["Sofia","Bulgarie",true,145], VAR:["Varna","Bulgarie",true,145],
+  ZAG:["Zagreb","Croatie",true,177], SPU:["Split","Croatie",true,177],
+  DBV:["Dubrovnik","Croatie",true,177], BEG:["Belgrade","Serbie",true,150],
+  LCA:["Larnaca","Chypre",true,177], MLA:["Malte","Malte",true,177],
+  TLL:["Tallinn","Estonie",true,177], RIX:["Riga","Lettonie",true,177],
+  VNO:["Vilnius","Lituanie",true,177], TIA:["Tirana","Albanie",true,130],
+  SKP:["Skopje","Macédoine",true,117],
+  // HORS ZONE EURO
+  CAI:["Le Caire","Égypte",false,148], HRG:["Hurghada","Égypte",false,148],
+  SSH:["Charm-el-Cheikh","Égypte",false,148],
+  DXB:["Dubaï","Émirats",false,300], AUH:["Abu Dhabi","Émirats",false,300],
+  DKR:["Dakar","Sénégal",false,140], ABJ:["Abidjan","Côte d'Ivoire",false,208],
+  JFK:["New York JFK","États-Unis",false,444],
+  LAX:["Los Angeles","États-Unis",false,326],
+  MIA:["Miami","États-Unis",false,326],
+  YYZ:["Toronto","Canada",false,356], YUL:["Montréal","Canada",false,206],
+  GRU:["São Paulo","Brésil",false,216],
+  NRT:["Tokyo NRT","Japon",false,177], HND:["Tokyo HND","Japon",false,177],
+  HKG:["Hong Kong","Hong Kong",false,256], SIN:["Singapour","Singapour",false,306],
+  BKK:["Bangkok","Thaïlande",false,136],
+  JNB:["Johannesburg","Afrique du Sud",false,185],
+  IST:["Istanbul","Turquie",false,135], TLV:["Tel Aviv","Israël",false,230],
+  DOH:["Doha","Qatar",false,278], RUH:["Riyad","Arabie Saoudite",false,337],
+};
+
+// ─── TARIF DES NUITÉES TRANSAVIA 2025 (déclaration 2026, revenus 2025) ──
+// Coût des chambres d'hôtel payées par l'employeur, à réintégrer au salaire
+// (DLF 15/02/1999). Quand plusieurs hôtels existent pour une escale, on
+// retient la MOYENNE des tarifs ; ajustable manuellement dans l'application.
+// ⚠️ ORY (base) n'y figure volontairement PAS : pas de nuitée à la base.
+const NUITEES_TARIF = {
+  AGA:150.00, AGP:150.00, ALG:89.00, ARN:122.00,
+  ATH:(183.00+252.97)/2, BCN:150.00, BER:106.00, BES:138.00,
+  BEY:171.00, BIQ:98.74, BOD:110.44, BRU:89.00, BSK:71.50,
+  BVC:253.00, CAI:(190.00+194.00)/2, CPH:(89.00+220.51)/2,
+  CTA:237.18, DJE:100.00, DSS:(239.38+234.57)/2, DWC:140.73,
+  EVN:322.00, FAO:140.50, FCO:187.50, FEZ:112.00, FNC:242.00,
+  HEL:201.50, HER:172.00, IBZ:95.13, IST:112.20, JED:214.56,
+  LIL:117.75, LIS:129.00, LXR:126.39, LYS:133.66, MAD:147.00,
+  MED:143.00, MIR:76.59, MPL:127.60, MRS:(96.25+199.09)/2,
+  MUC:145.00, MXP:(179.70+90.00)/2, NCE:105.95, NTE:93.25,
+  OPO:89.25, ORN:143.00, OSL:141.45, OUD:41.54,
+  PGF:(82.50+82.50+84.56)/3, PMI:(173.80+173.80+165.00)/3,
+  PMO:(101.00+237.18)/2, PRG:138.00,
+  RAK:(207.56+117.00+117.00+117.00)/4,
+  RNS:147.95, RVN:363.63, SID:183.63, SVQ:99.00, SXB:168.85,
+  TFS:(276.28+151.03)/2, TLN:95.09, TLS:142.60, TUN:94.71,
+};
+
+// ─── PARSEUR PDF NATIF JS ────────────────────────────────────────
+// Extrait les tokens texte d'un PDF en lisant les streams zlib directement
+// Fonctionne sur les PDFs APM/JasperReports sans aucune librairie externe
+
+function inflateWith(format, bytes) {
+  // format "deflate" = zlib avec header | "deflate-raw" = sans header
+  return new Promise((resolve, reject) => {
+    try {
+      const ds = new DecompressionStream(format);
+      const writer = ds.writable.getWriter();
+      const reader = ds.readable.getReader();
+      const chunks = [];
+      reader.read().then(function pump({ done, value }) {
+        if (done) {
+          const total = chunks.reduce((s, c) => s + c.length, 0);
+          const out = new Uint8Array(total);
+          let off = 0;
+          for (const c of chunks) { out.set(c, off); off += c.length; }
+          resolve(out);
+          return;
+        }
+        chunks.push(value);
+        reader.read().then(pump).catch(reject);
+      }).catch(reject);
+      writer.write(bytes);
+      writer.close();
+    } catch (e) { reject(e); }
+  });
+}
+
+async function inflatePDF(compressedBytes) {
+  // "deflate" attend le header zlib COMPLET (78 9c…) — ne pas le couper !
+  try {
+    return await inflateWith("deflate", compressedBytes);
+  } catch (e) {
+    // Fallback : raw deflate sans les 2 octets de header zlib
+    return await inflateWith("deflate-raw", compressedBytes.slice(2));
+  }
+}
+
+async function extractPDFTokens(arrayBuffer) {
+  const bytes = new Uint8Array(arrayBuffer);
+  const decoder = new TextDecoder("latin1");
+  const full = decoder.decode(bytes);
+
+  // Trouver tous les streams du PDF
+  const tokens = [];
+  const streamRegex = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
+  let match;
+
+  while ((match = streamRegex.exec(full)) !== null) {
+    // Position des bytes du stream dans le buffer (latin1 = 1 char ↔ 1 byte)
+    const start = match.index + match[0].indexOf("\n") + 1;
+    const streamBytes = bytes.slice(start, start + match[1].length);
+
+    let content = "";
+    if (streamBytes[0] === 0x78) {
+      // Header zlib (78 9c / 78 da…) → décompresser
+      try {
+        const inflated = await inflatePDF(streamBytes);
+        content = new TextDecoder("latin1").decode(inflated);
+      } catch (e) {
+        continue; // stream illisible → ignorer
+      }
+    } else if (streamBytes[0] === 0xff && streamBytes[1] === 0xd8) {
+      continue; // image JPEG → ignorer
+    } else {
+      content = match[1]; // stream non compressé
+    }
+
+    // Extraire les tokens entre parenthèses (opérateurs Tj du PDF)
+    const paren = /\(([^)\\]|\\.)*\)/g;
+    let pm;
+    while ((pm = paren.exec(content)) !== null) {
+      const raw = pm[0].slice(1, -1)
+        .replace(/\\n/g,"\n").replace(/\\r/g,"\r")
+        .replace(/\\t/g,"\t").replace(/\\\(/g,"(")
+        .replace(/\\\)/g,")").replace(/\\\\/g,"\\");
+      const t = raw.trim();
+      if (t) tokens.push(t);
+    }
+  }
+  return tokens;
+}
+
+function parseAPMFromTokens(tokens) {
+  // Identifier le header
+  let pilote = "", periode = "", base = "";
+  for (let i = 0; i < Math.min(tokens.length, 20); i++) {
+    // Nom du pilote : token contenant le matricule (CDB/xxx ou OPL/xxx)
+    if (/\((CDB|OPL|CPT|FO)\//i.test(tokens[i])) {
+      pilote = tokens[i].replace(/\\/g, "").replace(/\($/, "").trim();
+    }
+    if (/^(Janvier|Février|Mars|Avril|Mai|Juin|Juillet|Août|Septembre|Octobre|Novembre|Décembre)\s+\d{4}$/i.test(tokens[i])) {
+      periode = tokens[i];
+    }
+    if (/^April \d{4}$/.test(tokens[i]) || /^\w+ \d{4}$/.test(tokens[i])) {
+      if (!periode) periode = tokens[i];
+    }
+  }
+
+  // Parser les lignes jour par jour.
+  // Règle : un token ^\d{2}$ (01–31) est un numéro de jour SI le token
+  // suivant contient des lettres (= une affectation) et n'est pas une heure.
+  // Cela élimine les valeurs numériques des colonnes (HCa, PV…) qui
+  // ressemblent à des numéros de jour, et les jours vides.
+  // Dédoublonnage par jour : la page 2 (relevé HC) répète les mêmes jours.
+  const dayMap = new Map();
+  let i = 0;
+  while (i < tokens.length) {
+    const t = tokens[i];
+    if (/^\d{2}$/.test(t)) {
+      const jour = parseInt(t, 10);
+      if (jour >= 1 && jour <= 31 && i + 1 < tokens.length) {
+        const nxt = tokens[i + 1];
+        const isAffectation =
+          /[A-Za-zÀ-ÿ]/.test(nxt) && !/^\d{2}:\d{2}$/.test(nxt);
+        if (isAffectation) {
+          if (!dayMap.has(jour)) dayMap.set(jour, nxt);
+          i += 2;
+          continue;
+        }
+      }
+    }
+    i++;
+  }
+  const days = [...dayMap.entries()]
+    .map(([jour, affectation]) => ({ jour, affectation }))
+    .sort((a, b) => a.jour - b.jour);
+
+  // Détecter la base (premier code IATA dans les affectations de positionnement)
+  const firstFlight = days.find(d => /[A-Z]{3}[-*][A-Z]{3}/.test(d.affectation));
+  if (firstFlight) {
+    const codes = firstFlight.affectation.match(/[A-Z]{3}/g) || [];
+    base = codes[0] || "";
+  }
+
+  // Filtrer les jours de vol éligibles DLF
+  const NON_ELIGIBLE = ["OFF","CONGE","CONGÉ","BLANC","STAGE","REPOS",
+    "RESERVE","RÉSERVE","STANDBY","VISITE","SIMULATEUR","DESIDERATA"];
+  const flightDays = days.filter(d => {
+    const u = d.affectation.toUpperCase();
+    if (NON_ELIGIBLE.some(k => u.includes(k))) return false;
+    return /[A-Z]{3}[-*][A-Z]{3}/.test(d.affectation);
+  });
+
+  // Grouper en rotations (jours consécutifs)
+  if (flightDays.length === 0) return { pilote, periode, base, rotations: [] };
+
+  const groups = [];
+  let cur = [flightDays[0]];
+  for (let j = 1; j < flightDays.length; j++) {
+    if (flightDays[j].jour === flightDays[j-1].jour + 1) {
+      cur.push(flightDays[j]);
+    } else {
+      groups.push(cur);
+      cur = [flightDays[j]];
+    }
+  }
+  groups.push(cur);
+
+  // Calculer chaque rotation — méthode des découchers (exemples 2.1.4 du mémento) :
+  // · Le taux de chaque indemnité = celui du PAYS DU DÉCOUCHER (lieu de la nuitée),
+  //   pas un taux unique. Zone euro = 177 € (moyenne), mais une nuit à Copenhague
+  //   = tarif Danemark, à Londres = tarif GB, à Marrakech = tarif Maroc… (ex. n°5-7)
+  // · Cas 1 : (X − 0,5) indemnités, la fraction 0,5 s'affecte à la DERNIÈRE nuitée.
+  // · Cas 2 (découcher dans un pays hors liste 1a = arrêt ≥7h de facto) :
+  //   X indemnités, le dernier jour compte 1,0 au taux du dernier découcher (ex. n°9-15).
+  // · Aller-retour journée (1 jour) : 0,5 indemnité au tarif zone euro (base).
+  const ZONE_EURO_RATE = 177;
+  const rotations = groups.map((g, idx) => {
+    const allCodes = [...new Set(g.flatMap(d => (d.affectation.match(/[A-Z]{3}/g)||[])))];
+    const jours = g[g.length-1].jour - g[0].jour + 1;
+    const pays = [...new Set(allCodes.map(c => IATA[c]?.[1]).filter(Boolean))];
+    const uniq = allCodes.filter((c, i, a) => a.indexOf(c) === i);
+
+    // Découcher de chaque jour = dernier code IATA de l'affectation du jour
+    // (sauf le dernier jour de la rotation : retour à la base, pas de nuitée)
+    const nuits = [];
+    for (let d = 0; d < g.length - 1; d++) {
+      const codes = g[d].affectation.match(/[A-Z]{3}/g) || [];
+      const code = codes[codes.length - 1];
+      const info = IATA[code];
+      nuits.push({
+        jour: g[d].jour,
+        code,
+        pays: info ? info[1] : code,
+        zone1a: info ? info[2] : true,      // dans la liste 1a → Cas 1 possible
+        // Taux du pays de découcher ; zone euro (devise €) = taux moyen 177
+        taux: info ? info[3] : ZONE_EURO_RATE,
+      });
+    }
+
+    // Cas 2 si au moins un découcher dans un pays hors liste 1a
+    // (une nuitée implique un arrêt ≥7h dans ce pays)
+    const isCas2 = nuits.some(n => !n.zone1a);
+    const horsZone = [...new Set(nuits.filter(n => !n.zone1a).map(n => n.pays))];
+
+    // ── NUITÉES EMPLOYEUR à réintégrer (tarif Transavia 2025) ──
+    // Chaque nuit de découcher HORS BASE = une chambre payée par l'employeur.
+    // ORY (base) ne génère JAMAIS de nuitée. Escale absente du barème → 0 + alerte.
+    let nuiteesMontant = 0;
+    const nuiteesDetail = [];
+    const nuiteesInconnues = [];
+    for (const n of nuits) {
+      if (n.code === "ORY" || n.code === base) continue; // base : dodo à la maison
+      const tarif = NUITEES_TARIF[n.code];
+      if (tarif !== undefined) {
+        nuiteesMontant += tarif;
+        nuiteesDetail.push({ jour: n.jour, code: n.code, tarif });
+      } else {
+        nuiteesInconnues.push(n.code);
+        nuiteesDetail.push({ jour: n.jour, code: n.code, tarif: 0, inconnu: true });
+      }
+    }
+
+    // Montant = Σ taux des nuitées, la dernière comptant 0,5 (Cas 1) ou 1,0 (Cas 2)
+    let montant = 0, nbI = 0;
+    const detailNuits = [];
+    if (nuits.length === 0) {
+      // Aller-retour journée : 0,5 indemnité au tarif base / zone euro
+      montant = 0.5 * ZONE_EURO_RATE;
+      nbI = 0.5;
+      detailNuits.push({ libelle:"A/R journée (base)", coef:0.5, taux:ZONE_EURO_RATE });
+    } else {
+      for (let n = 0; n < nuits.length; n++) {
+        const last = n === nuits.length - 1;
+        // En Cas 1 le dernier jour (sans nuitée) vaut 0,5 affecté à la dernière
+        // nuitée → cette nuitée compte 1 + 0,5 = 1,5… non : X jours, X−1 nuits,
+        // total (X−0,5) ⇒ chaque nuit = 1 sauf ajout de 0,5 pour le dernier jour.
+        const coef = last ? (isCas2 ? 2 : 1.5) : 1;
+        montant += coef * nuits[n].taux;
+        nbI += coef;
+        detailNuits.push({ libelle:`Nuit J${nuits[n].jour} ${nuits[n].pays}`, coef, taux:nuits[n].taux });
+      }
+    }
+
+    // Taux affiché = celui qui domine (le plus fréquent parmi les nuitées)
+    const tauxFreq = {};
+    nuits.forEach(n => { tauxFreq[n.taux] = (tauxFreq[n.taux]||0) + 1; });
+    const tauxDominant = nuits.length
+      ? parseInt(Object.entries(tauxFreq).sort((a,b)=>b[1]-a[1])[0][0])
+      : ZONE_EURO_RATE;
+    const paysDominant = nuits.length
+      ? nuits.find(n => n.taux === tauxDominant)?.pays
+      : "Zone Euro";
+
+    return {
+      id: idx,
+      premier_jour: g[0].jour,
+      dernier_jour: g[g.length-1].jour,
+      jours_engagement: jours,
+      affectations: g.map(d => d.affectation),
+      jours: g.map(d => d.jour),
+      trajet_resume: uniq.join(" → "),
+      codes_iata: allCodes,
+      pays_visites: pays,
+      nuits: detailNuits,
+      nuiteesMontant,
+      nuiteesDetail,
+      nuiteesInconnues,
+      hors_zone_euro: horsZone,
+      cas: isCas2 ? 2 : 1,
+      isCas2,
+      taux: tauxDominant,
+      nb_indemnites: nbI,
+      montant,
+      pays_taux: paysDominant,
+    };
+  });
+
+  return { pilote, periode, base, rotations };
+}
+
+// ─── LECTURE FICHIER ─────────────────────────────────────────────
+async function readFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => resolve(e.target.result);
+    reader.onerror = () => reject(new Error("Impossible de lire le fichier"));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+// ─── UTILS ───────────────────────────────────────────────────────
+const fmt = n => new Intl.NumberFormat("fr-FR",{
+  style:"currency", currency:"EUR", maximumFractionDigits:0
+}).format(n||0);
+
+const inputSt = {
+  width:"100%", boxSizing:"border-box", background:C.alt,
+  border:`1px solid ${C.border}`, borderRadius:8,
+  padding:"9px 12px", color:C.white, fontSize:13, outline:"none",
+};
+
+function Tooltip({ text }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span style={{ position:"relative", display:"inline-block" }}>
+      <span onClick={e=>{e.stopPropagation();setOpen(!open)}} style={{
+        display:"inline-flex", alignItems:"center", justifyContent:"center",
+        width:16, height:16, borderRadius:"50%",
+        background:C.border, color:C.muted,
+        fontSize:10, fontWeight:700, cursor:"pointer", marginLeft:5, userSelect:"none",
+      }}>?</span>
+      {open && (
+        <span onClick={()=>setOpen(false)} style={{
+          position:"absolute", bottom:"calc(100% + 6px)", left:"50%",
+          transform:"translateX(-50%)",
+          background:C.alt, border:`1px solid ${C.border}`,
+          borderRadius:8, padding:"10px 12px",
+          fontSize:11, color:C.white, lineHeight:1.5,
+          width:230, zIndex:100, display:"block",
+          boxShadow:"0 4px 20px rgba(0,0,0,0.5)",
+        }}>{text}</span>
+      )}
+    </span>
+  );
+}
+
+// ─── AUTRES RUBRIQUES (saisie manuelle) ──────────────────────────
+const CATEGORIES = [
+  {
+    id:"transport", icon:"🚗", label:"Transport Domicile – Travail", short:"Transport", color:"#10B981",
+    description:"Barème kilométrique (simulateur impots.gouv.fr) + péages, parking, intérêts d'emprunt véhicule. Limité à 40 km sauf circonstances particulières (base ORY/CDG acceptée pour les pilotes).",
+    fields:[
+      {id:"bareme",label:"Montant barème kilométrique (€)",help:"Calculé sur impots.gouv.fr/simulateur-bareme-kilometrique. Inclut dépréciation, entretien, carburant, assurance."},
+      {id:"peage",label:"Péages autoroute (€)",help:"Montant réel justifié, cumulable avec le barème."},
+      {id:"parking",label:"Parking / stationnement travail (€)",help:"Stationnement à proximité du lieu de travail uniquement."},
+      {id:"interets",label:"Intérêts emprunt véhicule – part pro (€)",help:"Intérêts × (km professionnels / km totaux)."},
+      {id:"tc",label:"Transports en commun – part salarié (€)",help:"Abonnements après remboursement employeur 50% (cette prise en charge obligatoire reste exonérée, ne pas la réintégrer)."},
+      {id:"indemnite",label:"Indemnité / prime transport employeur (€)",help:"Méthode mémento §2.2 : vos frais km restent déduits EN INTÉGRALITÉ, mais cette indemnité doit être AJOUTÉE à votre salaire ligne 1AJ. Le total à réintégrer apparaît dans la Synthèse.",reintSalaire:true},
+    ],
+    justif:["Carte grise","Factures entretien","Relevés péage","Abonnements TC"],
+  },
+  {
+    id:"repas", icon:"🍽️", label:"Repas à la Base", short:"Repas", color:"#F59E0B",
+    description:"Frais supplémentaires de repas hors domicile à la base. Déduction = (prix − 5,20 €) par repas justifié (plafond 20,20 €), ou forfait 5,20 € sans justificatif.",
+    fields:[
+      {id:"nbj",label:"Nombre de repas avec justificatifs",help:"Max 2/jour. Déduction = (coût moyen − 5,20) × nombre."},
+      {id:"cout",label:"Coût moyen par repas (€, plafond 20,20)",help:"Moyenne des notes, plafonnée à 20,20 € (2023)."},
+      {id:"nbf",label:"Nombre de repas sans justificatifs",help:"Forfait 5,20 €/repas si impossibilité de rentrer déjeuner."},
+      {id:"tickets",label:"Part employeur tickets resto à déduire (€)",help:"À soustraire du total.",reint:true},
+    ],
+    justif:["Notes de restaurant","Planning prouvant l'impossibilité de rentrer","Relevé tickets restaurant"],
+    compute:v=>{
+      const c=Math.min(parseFloat(v.cout)||0,20.2);
+      return Math.max(0,Math.max(c-5.2,0)*(parseFloat(v.nbj)||0)+5.2*(parseFloat(v.nbf)||0)-(parseFloat(v.tickets)||0));
+    },
+  },
+  {
+    id:"double_res", icon:"🏠", label:"Double Résidence", short:"Double rés.", color:"#8B5CF6",
+    description:"Logement près de la base justifié par l'activité du conjoint, le PACS/mariage, ou la précarité de l'emploi. Transport admis : 1 A/R par semaine vers le domicile familial.",
+    fields:[
+      {id:"loyer",label:"Loyer / hôtel résidence secondaire (€)",help:"Annuel. Proratiser si usage mixte."},
+      {id:"annexes",label:"Charges annexes (EDF, eau, internet…) (€)",help:"Internet déductible si usage professionnel."},
+      {id:"transp",label:"Transport vers domicile familial (€)",help:"Base : 1 aller-retour hebdomadaire."},
+      {id:"repas2",label:"Repas supplémentaires (€)",help:"Si contraint de manger au restaurant midi et soir."},
+      {id:"interets2",label:"Intérêts emprunt immobilier rés. secondaire (€)",help:"Si double résidence durable. Intérêts uniquement."},
+    ],
+    justif:["Bail / factures hôtel","Quittances","Billets transport","Attestation activité conjoint"],
+  },
+  {
+    id:"formation", icon:"📚", label:"Formation & Documentation", short:"Formation", color:"#06B6D4",
+    description:"Stages, qualifications, conversion/renouvellement de licence, documentation technique, intérêts d'emprunt formation.",
+    fields:[
+      {id:"stage",label:"Formations et stages (€)",help:"Déductibles l'année du paiement."},
+      {id:"licence",label:"Conversion / renouvellement licence (€)",help:"Licences professionnelles aéronautiques."},
+      {id:"doc",label:"Documentation professionnelle (€)",help:"Revues, manuels, abonnements techniques."},
+      {id:"interets",label:"Intérêts emprunt formation (€)",help:"Emprunt exclusivement dédié à la formation."},
+    ],
+    justif:["Factures de stage","Factures licence","Factures documentation"],
+  },
+  {
+    id:"bureau", icon:"🖥️", label:"Bureau à Domicile", short:"Bureau", color:"#EC4899",
+    description:"Pièce du domicile à usage strictement professionnel. Quote-part = loyer × (surface bureau / surface totale).",
+    fields:[
+      {id:"loyer",label:"Loyer annuel total (€)",help:"Si propriétaire : valeur locative cadastrale +20 %."},
+      {id:"sb",label:"Surface bureau (m²)",help:"Pièce exclusivement professionnelle."},
+      {id:"st",label:"Surface totale logement (m²)",help:"Surface habitable totale."},
+      {id:"charges",label:"Charges part pro (EDF, internet…) (€)",help:"Au prorata de la surface."},
+    ],
+    justif:["Bail / acte de propriété","Plan du logement","Factures EDF / internet"],
+    compute:v=>{
+      const l=parseFloat(v.loyer)||0,sb=parseFloat(v.sb)||0,st=parseFloat(v.st)||1;
+      return l*(st>0?sb/st:0)+(parseFloat(v.charges)||0);
+    },
+  },
+  {
+    id:"materiel", icon:"💻", label:"Matériel & Communication", short:"Matériel", color:"#14B8A6",
+    description:"Informatique (amortissement 3 ans si >500 €), téléphonie et internet au prorata professionnel, mobilier, fournitures.",
+    fields:[
+      {id:"info",label:"Matériel informatique 100 % pro (€/an)",help:"Amortissement annuel sur 3 ans, ou totalité si ≤500 €."},
+      {id:"mixte",label:"Matériel mixte × % pro (€)",help:"Valeur amortie annuelle × % usage professionnel."},
+      {id:"mobile",label:"Forfait mobile part pro (€)",help:"Coût annuel × % usage professionnel."},
+      {id:"box",label:"Box internet part pro (€)",help:"Coût annuel × % usage professionnel."},
+      {id:"mobilier",label:"Mobilier de bureau (€/an)",help:"Amortissement, usage exclusivement professionnel."},
+      {id:"fournitures",label:"Fournitures (€)",help:"Papier, cartouches… sur justificatifs."},
+    ],
+    justif:["Factures d'achat","Factures opérateur","Justificatif % usage pro"],
+  },
+  {
+    id:"uniforme", icon:"👨‍✈️", label:"Frais Vestimentaires", short:"Uniforme", color:"#6366F1",
+    description:"Achat et entretien de l'uniforme, 2ᵉ paire de lunettes réglementaire. La dotation employeur doit être réintégrée.",
+    fields:[
+      {id:"achat",label:"Achat éléments d'uniforme (€)",help:"Veste, chemises, casquette, chaussures… sur factures."},
+      {id:"pressing",label:"Blanchissage / entretien (€)",help:"Pressing ou estimation chiffrée à domicile."},
+      {id:"lunettes",label:"2ᵉ paire lunettes – part non remboursée (€)",help:"Emport réglementaire obligatoire."},
+      {id:"dotation",label:"Dotation vestimentaire employeur (€)",help:"Méthode mémento : vos frais d'uniforme restent déduits en intégralité, mais cette dotation doit être AJOUTÉE au salaire ligne 1AJ (si non déjà imposée). Total dans la Synthèse.",reintSalaire:true},
+    ],
+    justif:["Factures uniforme","Factures pressing","Prescription lunettes"],
+  },
+  {
+    id:"cotis", icon:"🏛️", label:"Cotisations Professionnelles", short:"Cotisations", color:"#F97316",
+    description:"Cotisations syndicales (déductibles intégralement en frais réels) et assurance perte de licence souscrite à titre personnel (rescrit SNPL).",
+    fields:[
+      {id:"syndicat",label:"Cotisations syndicales (€)",help:"SNPL ou autre. En frais réels : sans limite. Sinon crédit d'impôt 66 % case 7AC."},
+      {id:"licence",label:"Assurance perte de licence (€)",help:"Cotisation personnelle facultative uniquement. Rescrit via service juridique SNPL."},
+    ],
+    justif:["Attestation cotisation syndicale","Contrat assurance perte de licence"],
+  },
+  {
+    id:"medical", icon:"🏥", label:"Frais Médicaux Pro", short:"Médical", color:"#EF4444",
+    description:"Uniquement la licence médicale Classe 1 (part non prise en charge). Les frais de santé généraux ne sont pas déductibles.",
+    fields:[
+      {id:"classe1",label:"Licence médicale Classe 1 (€)",help:"Part non remboursée par l'employeur, SS ou mutuelle."},
+    ],
+    justif:["Facture CEMPN","Attestation non-prise en charge employeur"],
+  },
+  {
+    id:"juridique", icon:"⚖️", label:"Frais Juridiques", short:"Juridique", color:"#64748B",
+    description:"Honoraires d'avocat et frais de justice liés à la sphère professionnelle (prud'hommes, salaires, rupture imposable).",
+    fields:[
+      {id:"avocat",label:"Honoraires d'avocat (€)",help:"Factures précisant l'objet professionnel obligatoires."},
+      {id:"autres",label:"Autres frais de justice (€)",help:"Expertise, signification liées à un litige pro."},
+    ],
+    justif:["Factures honoraires avec objet","Décision de justice"],
+  },
+  {
+    id:"mandat", icon:"🤝", label:"Représentation du Personnel", short:"Mandat", color:"#84CC16",
+    description:"Dépenses d'un mandat de délégué syndical / du personnel. Seul l'excédent sur les remboursements est déductible.",
+    fields:[
+      {id:"frais",label:"Frais liés au mandat (€)",help:"Déplacements, communications, documentation."},
+      {id:"remb",label:"Remboursements reçus (€)",help:"Employeur ou syndicat. À déduire.",reint:true},
+    ],
+    justif:["Justificatifs de dépenses","Attestation de mandat"],
+    compute:v=>Math.max(0,(parseFloat(v.frais)||0)-(parseFloat(v.remb)||0)),
+  },
+];
+
+function computeCat(cat, vals) {
+  if (cat.compute) return cat.compute(vals);
+  // reint = vraie soustraction des frais (ex: tickets resto, remboursements mandat)
+  // reintSalaire = à AJOUTER au salaire 1AJ, n'ampute PAS les frais (méthode mémento §1.8.2)
+  return cat.fields.reduce((s,f)=>{
+    if (f.reintSalaire) return s;
+    return s + (f.reint ? -(parseFloat(vals[f.id])||0) : (parseFloat(vals[f.id])||0));
+  },0);
+}
+
+function computeReintSalaire(cat, vals) {
+  return cat.fields.reduce((s,f)=>
+    s + (f.reintSalaire ? (parseFloat(vals[f.id])||0) : 0), 0);
+}
+
+// ─── MODULE FRAIS EN COURRIER (APM) ──────────────────────────────
+function CourrierModule({ rotations, setRotations, nuitees, setNuitees, meta, setMeta, periodes, setPeriodes }) {
+  const [logs, setLogs] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const fileRef = useRef();
+  const log = useCallback((type,msg)=>setLogs(l=>[...l,{type,msg}]),[]);
+
+  const processFile = useCallback(async (file) => {
+    if (!file) return;
+    setBusy(true); setLogs([]);
+    log("info",`📂 "${file.name}" (${Math.round(file.size/1024)} ko)…`);
+    try {
+      const buffer = await readFile(file);
+      log("info","📖 Extraction du texte PDF…");
+      const tokens = await extractPDFTokens(buffer);
+      log("info",`   → ${tokens.length} tokens extraits`);
+      if (tokens.length < 10) throw new Error("PDF vide ou protégé.");
+      const result = parseAPMFromTokens(tokens);
+      if (result.rotations.length === 0) {
+        log("warn","⚠️ Aucune rotation trouvée. Vérifiez le format APM (PV ou HC).");
+      } else {
+        // Anti-doublon : un même mois ne doit pas être chargé deux fois
+        const per = result.periode || file.name;
+        if (periodes.includes(per)) {
+          log("warn",`⚠️ "${per}" déjà chargé — fichier ignoré pour éviter un doublon.`);
+          log("info","   (Utilisez 🗑 Réinitialiser pour repartir de zéro si besoin.)");
+          setBusy(false);
+          return;
+        }
+        setPeriodes(prev=>[...prev, per]);
+        // Marquer chaque rotation avec son mois d'origine
+        result.rotations = result.rotations.map(r=>({...r, periode: per}));
+        log("success",`✅ ${result.rotations.length} rotation(s) — ${per}`);
+        result.rotations.forEach(r=>log("success",
+          `   J${r.premier_jour}→${r.dernier_jour} : Cas ${r.cas} · ${r.nb_indemnites} ind. × ${r.taux}€ = ${fmt(r.montant)}`));
+      }
+      if (result.pilote||result.periode) setMeta({pilote:result.pilote,base:result.base,periode:result.periode});
+      setRotations(prev=>[...prev,...result.rotations]);
+    } catch(e) {
+      log("error",`❌ ${e.message}`);
+    } finally { setBusy(false); }
+  },[log,setRotations,setMeta,periodes,setPeriodes]);
+
+  const toggleCas = idx => setRotations(p=>p.map((r,i)=>{
+    if(i!==idx) return r;
+    const c2 = !(r.cas===2||r.isCas2);
+    // Recalcul depuis le détail des nuitées : seul le coefficient de la
+    // dernière nuitée change (1,5 en Cas 1 ↔ 2,0 en Cas 2)
+    if (!r.nuits || r.nuits.length===0) return r; // A/R journée : pas de bascule
+    const nuits = r.nuits.map((n,k)=>{
+      const last = k === r.nuits.length-1;
+      return {...n, coef: last ? (c2?2:1.5) : n.coef};
+    });
+    const montant = nuits.reduce((s,n)=>s+n.coef*n.taux,0);
+    const nbI = nuits.reduce((s,n)=>s+n.coef,0);
+    return {...r, cas:c2?2:1, isCas2:c2, nuits, nb_indemnites:nbI, montant};
+  }));
+
+  const totalCourrier = rotations.reduce((s,r)=>s+r.montant,0);
+
+  return (
+    <div>
+      {/* Jauge des 12 mois */}
+      <div style={{marginBottom:10}}>
+        <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:C.muted,marginBottom:4}}>
+          <span>📆 Relevés chargés : {periodes.length} / 12 mois</span>
+          {periodes.length>=12 && <span style={{color:C.green,fontWeight:700}}>✓ Année complète</span>}
+        </div>
+        <div style={{display:"flex",gap:3}}>
+          {Array.from({length:12}).map((_,i)=>(
+            <div key={i} style={{
+              flex:1, height:6, borderRadius:3,
+              background: i<periodes.length ? C.green : C.border,
+              transition:"background 0.3s",
+            }}/>
+          ))}
+        </div>
+        {periodes.length>0 && (
+          <div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:6}}>
+            {periodes.map((p,i)=>(
+              <span key={i} style={{
+                fontSize:9, background:`${C.green}18`, color:C.green,
+                border:`1px solid ${C.green}33`, borderRadius:4, padding:"1px 6px",
+              }}>{p}</span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Drop zone */}
+      <div
+        onDragOver={e=>{e.preventDefault();setDragOver(true)}}
+        onDragLeave={()=>setDragOver(false)}
+        onDrop={e=>{e.preventDefault();setDragOver(false);processFile(e.dataTransfer.files[0])}}
+        onClick={()=>fileRef.current?.click()}
+        style={{
+          border:`2px dashed ${dragOver?C.gold:C.border}`,
+          borderRadius:12, padding:"20px 16px", textAlign:"center",
+          cursor:"pointer", background:dragOver?`${C.gold}08`:C.alt,
+          transition:"all 0.2s", marginBottom:12,
+        }}
+      >
+        <input ref={fileRef} type="file" accept=".pdf" onChange={e=>processFile(e.target.files[0])} style={{display:"none"}}/>
+        {busy ? (
+          <><div style={{fontSize:26,marginBottom:6}}>⏳</div>
+          <div style={{color:C.white,fontWeight:600,fontSize:13}}>Lecture du relevé…</div></>
+        ) : (
+          <><div style={{fontSize:28,marginBottom:6}}>📄</div>
+          <div style={{color:C.white,fontWeight:600,fontSize:13}}>Déposez votre relevé APM mensuel</div>
+          <div style={{color:C.muted,fontSize:10,marginTop:3}}>PV ou HC · cumulables sur l'année</div>
+          <div style={{display:"inline-block",marginTop:10,background:C.gold,color:"#000",
+            borderRadius:7,padding:"7px 18px",fontSize:11,fontWeight:700}}>Choisir un PDF</div></>
+        )}
+      </div>
+
+      {logs.length>0 && (
+        <div style={{background:C.bg,borderRadius:8,padding:10,marginBottom:12,fontFamily:"monospace"}}>
+          {logs.map((l,i)=>(
+            <div key={i} style={{fontSize:10,padding:"2px 0",lineHeight:1.5,
+              color:l.type==="success"?C.green:l.type==="error"?C.red:l.type==="warn"?C.amber:C.muted}}>
+              {l.msg}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {meta && (meta.pilote||meta.periode) && (
+        <div style={{display:"flex",gap:14,fontSize:11,marginBottom:10,flexWrap:"wrap"}}>
+          {meta.pilote && <span style={{color:C.muted}}>👤 <span style={{color:C.white}}>{meta.pilote}</span></span>}
+          {meta.base && <span style={{color:C.muted}}>🛫 <span style={{color:C.white}}>{meta.base}</span></span>}
+          {meta.periode && <span style={{color:C.muted}}>📅 <span style={{color:C.white}}>{meta.periode}</span></span>}
+        </div>
+      )}
+
+      {/* Rotations */}
+      {rotations.map((r,i)=>{
+        const isCas2=r.cas===2||r.isCas2;
+        const zc=isCas2?C.amber:C.blue;
+        return (
+          <div key={i} style={{
+            background:C.bg, borderRadius:8, marginBottom:6,
+            border:`1px solid ${isCas2?C.amber+"44":C.border}`,
+            padding:"10px 12px", display:"flex", alignItems:"center", gap:10,
+          }}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:12,fontWeight:600,color:C.white,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                {r.trajet_resume}
+              </div>
+              <div style={{fontSize:10,color:C.muted}}>
+                J{r.premier_jour}→{r.dernier_jour} · <span style={{color:zc}}>Cas {isCas2?"2":"1"} · {r.nb_indemnites} ind.</span>
+                {r.nuits?.length>0 && (
+                  <span style={{display:"block",fontSize:9,color:C.muted,marginTop:1}}>
+                    {r.nuits.map(n=>`${n.coef}×${n.taux}€ ${n.libelle.replace(/^Nuit /,"")}`).join(" · ")}
+                  </span>
+                )}
+                {r.hors_zone_euro?.length>0 && (
+                  <button onClick={()=>toggleCas(i)} style={{
+                    marginLeft:6,background:`${C.amber}22`,border:`1px solid ${C.amber}44`,
+                    color:C.amber,borderRadius:3,padding:"0 5px",fontSize:9,cursor:"pointer",
+                  }}>⇄ Cas</button>
+                )}
+              </div>
+            </div>
+            <div style={{fontSize:13,fontWeight:700,color:zc,flexShrink:0}}>{fmt(r.montant)}</div>
+            <button onClick={()=>setRotations(p=>p.filter((_,j)=>j!==i))} style={{
+              background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16,flexShrink:0,
+            }}>×</button>
+          </div>
+        );
+      })}
+
+      {/* Nuitées employeur — calcul automatique (tarif Transavia 2025) */}
+      {(() => {
+        const nuiteesAuto = rotations.reduce((s,r)=>s+(r.nuiteesMontant||0),0);
+        // Agrégat par escale
+        const parEscale = {};
+        rotations.forEach(r=>(r.nuiteesDetail||[]).forEach(n=>{
+          if(!parEscale[n.code]) parEscale[n.code]={count:0,tarif:n.tarif,inconnu:n.inconnu};
+          parEscale[n.code].count++;
+        }));
+        const inconnues = [...new Set(rotations.flatMap(r=>r.nuiteesInconnues||[]))];
+        return (
+          <div style={{marginTop:10}}>
+            <label style={{fontSize:11,color:C.amber,fontWeight:600,display:"block",marginBottom:4}}>
+              🏨 Nuitées employeur (auto · tarif Transavia 2025)
+              <Tooltip text="Calcul automatique : chaque nuit de découcher HORS BASE = 1 chambre payée par l'employeur, au tarif 2025 de l'escale (moyenne si plusieurs hôtels). ORY, votre base, ne génère jamais de nuitée. Ce montant est à AJOUTER au salaire 1AJ (DLF 15/02/1999). Le champ ci-dessous permet de remplacer ce calcul par le montant exact de l'attestation employeur."/>
+            </label>
+            {Object.keys(parEscale).length>0 && (
+              <div style={{background:C.bg,borderRadius:8,padding:"8px 10px",marginBottom:6}}>
+                {Object.entries(parEscale).map(([code,d])=>(
+                  <div key={code} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"2px 0"}}>
+                    <span style={{color:d.inconnu?C.red:C.muted}}>
+                      {code} × {d.count} nuit{d.count>1?"s":""}
+                      {d.inconnu && " ⚠️ hors barème"}
+                    </span>
+                    <span style={{color:d.inconnu?C.red:C.white}}>
+                      {d.inconnu ? "0 €" : fmt(d.count*d.tarif)}
+                    </span>
+                  </div>
+                ))}
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:12,fontWeight:700,
+                  borderTop:`1px solid ${C.border}`,paddingTop:4,marginTop:3}}>
+                  <span style={{color:C.amber}}>Total auto</span>
+                  <span style={{color:C.amber}}>{fmt(nuiteesAuto)}</span>
+                </div>
+                {inconnues.length>0 && (
+                  <div style={{fontSize:9,color:C.red,marginTop:4,lineHeight:1.4}}>
+                    ⚠️ Escale(s) absente(s) du barème 2025 : {inconnues.join(", ")} —
+                    complétez via le champ d'ajustement ci-dessous.
+                  </div>
+                )}
+              </div>
+            )}
+            <div style={{position:"relative"}}>
+              <input type="number" min="0" value={nuitees} onChange={e=>setNuitees(e.target.value)}
+                placeholder={nuiteesAuto>0?`Auto : ${nuiteesAuto.toFixed(2)} € (saisir pour remplacer)`:"Ajustement manuel (optionnel)"}
+                style={{...inputSt,paddingRight:30}}/>
+              <span style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",fontSize:11,color:C.muted}}>€</span>
+            </div>
+            <div style={{fontSize:9,color:C.muted,marginTop:3,lineHeight:1.4}}>
+              Laissez vide pour utiliser le calcul automatique. Saisissez le montant de
+              l'attestation employeur si elle diffère (hôtel précis, tarif négocié…).
+            </div>
+          </div>
+        );
+      })()}
+
+      {rotations.length>0 && (
+        <div style={{
+          marginTop:12, background:`${C.blue}12`, border:`1px solid ${C.blue}33`,
+          borderRadius:8, padding:"10px 12px",
+        }}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontSize:12,color:C.muted}}>Frais en courrier déductibles</span>
+            <span style={{fontSize:16,fontWeight:700,color:C.blue}}>{fmt(totalCourrier)}</span>
+          </div>
+          {(()=>{
+            const nAuto = rotations.reduce((s,r)=>s+(r.nuiteesMontant||0),0);
+            const nEff = nuitees!=="" ? (parseFloat(nuitees)||0) : nAuto;
+            return nEff>0 && (
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:4,
+                paddingTop:4,borderTop:`1px solid ${C.border}`}}>
+                <span style={{fontSize:11,color:C.amber}}>+ nuitées à ajouter au salaire 1AJ</span>
+                <span style={{fontSize:12,fontWeight:600,color:C.amber}}>{fmt(nEff)}</span>
+              </div>
+            );
+          })()}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── CARTE RUBRIQUE MANUELLE ─────────────────────────────────────
+function CatCard({ cat, values, onChange, isOpen, onToggle }) {
+  const total = computeCat(cat, values);
+  return (
+    <div style={{
+      background:C.surface, borderRadius:12, marginBottom:8, overflow:"hidden",
+      border:`1px solid ${isOpen?cat.color:C.border}`, transition:"border-color 0.2s",
+    }}>
+      <div onClick={onToggle} style={{
+        display:"flex", alignItems:"center", justifyContent:"space-between",
+        padding:"13px 16px", cursor:"pointer",
+        background:isOpen?`${cat.color}0E`:"transparent",
+      }}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontSize:20}}>{cat.icon}</span>
+          <div>
+            <div style={{fontSize:13,fontWeight:600,color:C.white}}>{cat.label}</div>
+            {total>0 && <div style={{fontSize:11,color:cat.color,fontWeight:700}}>{fmt(total)}</div>}
+          </div>
+        </div>
+        <span style={{color:C.muted,fontSize:16,transform:isOpen?"rotate(180deg)":"none",transition:"transform 0.2s"}}>▾</span>
+      </div>
+      {isOpen && (
+        <div style={{padding:"0 16px 16px"}}>
+          <p style={{fontSize:11,color:C.muted,lineHeight:1.5,margin:"0 0 14px",
+            borderTop:`1px solid ${C.border}`,paddingTop:12}}>{cat.description}</p>
+          <div style={{display:"grid",gap:10}}>
+            {cat.fields.map(f=>(
+              <div key={f.id}>
+                <label style={{display:"flex",alignItems:"center",fontSize:11,
+                  color:f.reint?C.amber:C.muted,marginBottom:4,fontWeight:500}}>
+                  {f.reint&&"⚠️ "}{f.label}<Tooltip text={f.help}/>
+                </label>
+                <input type="number" min="0" value={values[f.id]||""}
+                  onChange={e=>onChange(f.id,e.target.value)} style={inputSt}/>
+              </div>
+            ))}
+          </div>
+          {total>0 && (
+            <div style={{marginTop:12,background:`${cat.color}12`,border:`1px solid ${cat.color}33`,
+              borderRadius:8,padding:"9px 12px",display:"flex",justifyContent:"space-between"}}>
+              <span style={{fontSize:12,color:C.muted}}>Sous-total {cat.short}</span>
+              <span style={{fontSize:15,fontWeight:700,color:cat.color}}>{fmt(total)}</span>
+            </div>
+          )}
+          <div style={{marginTop:12}}>
+            <div style={{fontSize:10,color:C.muted,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>
+              📎 Justificatifs
+            </div>
+            <ul style={{margin:0,padding:"0 0 0 14px"}}>
+              {cat.justif.map((j,i)=>(
+                <li key={i} style={{fontSize:10,color:C.muted,lineHeight:1.6}}>{j}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── COUCHE DE STOCKAGE RÉSILIENTE ───────────────────────────────
+// Essaie dans l'ordre : window.storage (artefact Claude) → localStorage
+// (navigateur / version OVH) → mémoire de session (dernier recours).
+// Retourne aussi le backend utilisé pour l'afficher dans l'interface.
+const memStore = {};
+const Storage = {
+  backend: null,
+  async detect() {
+    if (this.backend) return this.backend;
+    // 1. window.storage (artefacts Claude)
+    if (window.storage?.set) {
+      try {
+        await window.storage.set("__test__", "1");
+        await window.storage.delete("__test__");
+        this.backend = "claude"; return this.backend;
+      } catch(e) {}
+    }
+    // 2. localStorage (site web classique)
+    try {
+      localStorage.setItem("__test__","1");
+      localStorage.removeItem("__test__");
+      this.backend = "local"; return this.backend;
+    } catch(e) {}
+    // 3. mémoire (perdu à la fermeture)
+    this.backend = "memoire"; return this.backend;
+  },
+  async get(key) {
+    const b = await this.detect();
+    if (b==="claude") {
+      const r = await window.storage.get(key);
+      return r?.value ?? null;
+    }
+    if (b==="local") return localStorage.getItem("fr-pnt:"+key);
+    return memStore[key] ?? null;
+  },
+  async set(key, value) {
+    const b = await this.detect();
+    if (b==="claude") { await window.storage.set(key, value); return; }
+    if (b==="local") { localStorage.setItem("fr-pnt:"+key, value); return; }
+    memStore[key] = value;
+  },
+  async remove(key) {
+    const b = await this.detect();
+    if (b==="claude") { try { await window.storage.delete(key); } catch(e){} return; }
+    if (b==="local") { localStorage.removeItem("fr-pnt:"+key); return; }
+    delete memStore[key];
+  },
+};
+
+// ─── JUSTIFICATIFS : helpers ─────────────────────────────────────
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+
+// Compression des photos (canvas) : max 1400 px, JPEG qualité 0,72.
+// Une facture photographiée passe de ~4 Mo à ~250 ko, lisible à l'impression.
+function compressImage(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 1400;
+        let { width, height } = img;
+        if (width > MAX || height > MAX) {
+          const k = MAX / Math.max(width, height);
+          width = Math.round(width*k); height = Math.round(height*k);
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width; canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", 0.72));
+      };
+      img.onerror = () => reject(new Error("Image illisible"));
+      img.src = e.target.result;
+    };
+    reader.onerror = () => reject(new Error("Lecture impossible"));
+    reader.readAsDataURL(file);
+  });
+}
+
+function fileToDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = e => resolve(e.target.result);
+    r.onerror = () => reject(new Error("Lecture impossible"));
+    r.readAsDataURL(file);
+  });
+}
+
+const JUSTIF_CATS = [
+  {id:"courrier", label:"✈️ Frais en courrier (relevés APM, attestation)"},
+  {id:"transport", label:"🚗 Transport (carte grise, péages, factures)"},
+  {id:"repas", label:"🍽️ Repas (notes de restaurant)"},
+  {id:"double_res", label:"🏠 Double résidence (bail, quittances)"},
+  {id:"formation", label:"📚 Formation (factures stage, licence)"},
+  {id:"bureau", label:"🖥️ Bureau (bail, factures EDF/internet)"},
+  {id:"materiel", label:"💻 Matériel (factures d'achat)"},
+  {id:"uniforme", label:"👨‍✈️ Uniforme (factures, pressing)"},
+  {id:"cotis", label:"🏛️ Cotisations (attestations)"},
+  {id:"medical", label:"🏥 Médical (facture CEMPN)"},
+  {id:"juridique", label:"⚖️ Juridique (honoraires)"},
+  {id:"mandat", label:"🤝 Mandat (justificatifs)"},
+  {id:"autre", label:"📄 Autre"},
+];
+
+function App() {
+  const [tab, setTab] = useState("saisie");
+  const [openCat, setOpenCat] = useState("courrier");
+  const [vals, setVals] = useState({});
+  const [revenu, setRevenu] = useState("");
+  // État frais en courrier
+  const [rotations, setRotations] = useState([]);
+  const [nuitees, setNuitees] = useState("");
+  const [meta, setMeta] = useState(null);
+  const [periodes, setPeriodes] = useState([]); // mois déjà chargés
+  const [storageReady, setStorageReady] = useState(false);
+  const [saveStatus, setSaveStatus] = useState("");
+  const [backend, setBackend] = useState(null);
+  const [showBackup, setShowBackup] = useState(false);
+  const [justifs, setJustifs] = useState([]); // {id, catId, name, mime, data, date}
+  const [printMode, setPrintMode] = useState(false);
+
+  const applyData = useCallback((d) => {
+    if (d.rotations) setRotations(d.rotations);
+    if (d.nuitees !== undefined) setNuitees(d.nuitees);
+    if (d.vals) setVals(d.vals);
+    if (d.revenu !== undefined) setRevenu(d.revenu);
+    if (d.meta) setMeta(d.meta);
+    if (d.periodes) setPeriodes(d.periodes);
+    if (d.justifs) setJustifs(d.justifs); // export complet : data incluse
+  }, []);
+
+  // ── CHARGEMENT au démarrage (persistance entre sessions) ──
+  useEffect(() => {
+    (async () => {
+      const b = await Storage.detect();
+      setBackend(b);
+      try {
+        const saved = await Storage.get("frais-reels-pnt");
+        if (saved) {
+          const d = JSON.parse(saved);
+          applyData(d);
+          // Justificatifs : index dans la clé principale, données par clé séparée
+          if (d.justifsIndex?.length) {
+            const loaded = [];
+            for (const m of d.justifsIndex) {
+              try {
+                const data = await Storage.get("justif:"+m.id);
+                if (data) loaded.push({ ...m, data });
+              } catch(e) {}
+            }
+            setJustifs(loaded);
+          }
+        }
+      } catch (e) { /* première utilisation */ }
+      setStorageReady(true);
+    })();
+  }, [applyData]);
+
+  // ── Ajout / suppression de justificatifs (données stockées par clé) ──
+  const addJustif = useCallback(async (catId, file) => {
+    const isImg = file.type.startsWith("image/");
+    const isPdf = file.type === "application/pdf";
+    if (!isImg && !isPdf) throw new Error("Format accepté : photo ou PDF");
+    const data = isImg ? await compressImage(file) : await fileToDataURL(file);
+    if (data.length > 2_500_000) {
+      throw new Error("Fichier trop volumineux après compression (>2,5 Mo). Pour un PDF lourd, photographiez les pages.");
+    }
+    const j = { id: uid(), catId, name: file.name, mime: isImg?"image/jpeg":file.type,
+                data, date: new Date().toISOString().slice(0,10) };
+    await Storage.set("justif:"+j.id, data);
+    setJustifs(prev => [...prev, j]);
+  }, []);
+
+  const removeJustif = useCallback(async (id) => {
+    await Storage.remove("justif:"+id);
+    setJustifs(prev => prev.filter(j => j.id !== id));
+  }, []);
+
+  // ── SAUVEGARDE automatique à chaque modification ──
+  useEffect(() => {
+    if (!storageReady) return; // ne pas écraser avant le chargement initial
+    const timer = setTimeout(async () => {
+      try {
+        await Storage.set("frais-reels-pnt", JSON.stringify({
+          rotations, nuitees, vals, revenu, meta, periodes,
+          justifsIndex: justifs.map(({data, ...m}) => m), // index sans les données
+          savedAt: new Date().toISOString(),
+        }));
+        setSaveStatus(backend==="memoire" ? "⚠️ Session seulement" : "💾 Sauvegardé");
+        setTimeout(() => setSaveStatus(""), 2500);
+      } catch (e) {
+        setSaveStatus("⚠️ Échec sauvegarde");
+      }
+    }, 800); // debounce
+    return () => clearTimeout(timer);
+  }, [rotations, nuitees, vals, revenu, meta, periodes, justifs, storageReady, backend]);
+
+  // Export / import de sauvegarde (transfert entre versions et appareils)
+  const exportJSON = (withJustifs) => JSON.stringify({
+    rotations, nuitees, vals, revenu, meta, periodes,
+    ...(withJustifs ? { justifs } : {}),
+    exportedAt: new Date().toISOString(), app: "FraisReelsPN",
+  });
+  const importJSON = async (txt) => {
+    try {
+      const d = JSON.parse(txt);
+      if (!d.rotations && !d.vals && !d.justifs) throw new Error("format inattendu");
+      applyData(d);
+      // Réécrire les données des justificatifs dans leurs clés
+      if (d.justifs?.length) {
+        for (const j of d.justifs) {
+          try { await Storage.set("justif:"+j.id, j.data); } catch(e) {}
+        }
+      }
+      return true;
+    } catch(e) { return false; }
+  };
+
+  const resetAll = async () => {
+    for (const j of justifs) { try { await Storage.remove("justif:"+j.id); } catch(e){} }
+    setRotations([]); setNuitees(""); setVals({});
+    setRevenu(""); setMeta(null); setPeriodes([]); setJustifs([]);
+    await Storage.remove("frais-reels-pnt");
+  };
+
+  const handleChange = useCallback((catId, fieldId, v) =>
+    setVals(p=>({...p,[catId]:{...(p[catId]||{}),[fieldId]:v}})),[]);
+
+  const totalCourrier = rotations.reduce((s,r)=>s+r.montant,0);
+  const catTotals = CATEGORIES.map(c=>({...c, amount:computeCat(c, vals[c.id]||{})}));
+  const totalAutres = catTotals.reduce((s,c)=>s+c.amount,0);
+  const grandTotal = totalCourrier + totalAutres;
+  // Nuitées : calcul automatique (tarif Transavia 2025, base ORY exclue),
+  // remplacé par la saisie manuelle si le champ est renseigné
+  const nuiteesAuto = rotations.reduce((s,r)=>s+(r.nuiteesMontant||0),0);
+  const nuiteesEff = nuitees !== "" ? (parseFloat(nuitees)||0) : nuiteesAuto;
+  // Sommes à AJOUTER au salaire ligne 1AJ (méthode mémento §1.8.2)
+  const reintDetail = [
+    {label:`Nuitées employeur ${nuitees===""?"(auto · tarif 2025)":"(saisie manuelle)"}`, amount: nuiteesEff},
+    ...CATEGORIES.map(c=>({
+      label: c.label,
+      amount: computeReintSalaire(c, vals[c.id]||{}),
+    })),
+  ].filter(r=>r.amount>0);
+  const totalReint = reintDetail.reduce((s,r)=>s+r.amount,0);
+
+  // Abattement 10 % — revenus 2025 (déclaration 2026) : min 509 €, plafond 14 555 €
+  // (identique pour tous les salariés, aucun plafond spécifique pilotes)
+  const rev = parseFloat(revenu)||0;
+  const abattement = rev>0 ? Math.min(Math.max(rev*0.1, Math.min(509, rev)), 14555) : 0;
+  // Comparaison équitable : en frais réels les indemnités sont réintégrées au salaire,
+  // alors qu'au forfait elles restent exonérées → avantage net = (frais − réintégration) − abattement
+  const gain = (grandTotal - totalReint) - abattement;
+  const nbRempli = (totalCourrier>0?1:0) + catTotals.filter(c=>c.amount>0).length;
+
+  // ── MODE DOSSIER FISCAL IMPRIMABLE ──
+  if (printMode) {
+    return <DossierFiscal
+      rotations={rotations} catTotals={catTotals}
+      totalCourrier={totalCourrier} grandTotal={grandTotal}
+      nuiteesEff={nuiteesEff} reintDetail={reintDetail} totalReint={totalReint}
+      abattement={abattement} gain={gain} revenu={rev}
+      meta={meta} periodes={periodes} justifs={justifs}
+      onBack={()=>setPrintMode(false)}
+    />;
+  }
+
+  return (
+    <div style={{
+      fontFamily:"'Inter',-apple-system,sans-serif",
+      background:C.bg, minHeight:"100vh", color:C.white,
+      maxWidth:480, margin:"0 auto",
+    }}>
+      {/* HEADER */}
+      <div style={{
+        background:`linear-gradient(135deg,${C.surface},${C.alt})`,
+        borderBottom:`1px solid ${C.border}`, padding:"16px 16px 0",
+        position:"sticky", top:0, zIndex:50,
+      }}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
+          <div>
+            <div style={{fontSize:18,fontWeight:800,lineHeight:1.2}}>✈️ Frais Réels PN</div>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginTop:2,minHeight:14}}>
+              {backend && (
+                <span style={{fontSize:9,color:backend==="memoire"?C.red:C.muted}}>
+                  {backend==="claude"?"💾 Stockage Claude":backend==="local"?"💾 Stockage navigateur":"⚠️ Mémoire volatile"}
+                </span>
+              )}
+              {saveStatus && <span style={{fontSize:9,color:C.green}}>{saveStatus}</span>}
+              <button onClick={()=>setShowBackup(!showBackup)} style={{
+                background:"none",border:"none",color:C.gold,
+                fontSize:9,cursor:"pointer",padding:0,textDecoration:"underline",
+              }}>🔐 Sauvegarde</button>
+              {(rotations.length>0 || Object.keys(vals).length>0) && (
+                <button onClick={()=>{
+                  if (window.confirm("Effacer toutes les données sauvegardées (rotations, saisies) ?")) resetAll();
+                }} style={{
+                  background:"none",border:"none",color:C.muted,
+                  fontSize:9,cursor:"pointer",padding:0,textDecoration:"underline",
+                }}>🗑 Réinitialiser</button>
+              )}
+            </div>
+          </div>
+          <div style={{background:`${C.gold}18`,border:`1px solid ${C.gold}44`,
+            borderRadius:10,padding:"7px 12px",textAlign:"right"}}>
+            <div style={{fontSize:9,color:C.gold,textTransform:"uppercase",letterSpacing:1}}>Total</div>
+            <div style={{fontSize:17,fontWeight:800,color:C.gold,fontFamily:"monospace"}}>{fmt(grandTotal)}</div>
+          </div>
+        </div>
+        <div style={{display:"flex",marginTop:8}}>
+          {[
+            {id:"saisie",label:"Saisie"},
+            {id:"synthese",label:"Synthèse"},
+            {id:"legal",label:"Légal"},
+          ].map(t=>(
+            <button key={t.id} onClick={()=>setTab(t.id)} style={{
+              flex:1,padding:"10px 0",border:"none",cursor:"pointer",
+              background:"transparent",fontSize:12,fontWeight:tab===t.id?700:400,
+              color:tab===t.id?C.gold:C.muted,
+              borderBottom:`2px solid ${tab===t.id?C.gold:"transparent"}`,
+            }}>{t.label}</button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{padding:14}}>
+
+        {/* ─── PANNEAU SAUVEGARDE (export / import) ─── */}
+        {showBackup && (
+          <BackupPanel
+            exportJSON={exportJSON}
+            importJSON={importJSON}
+            backend={backend}
+            onClose={()=>setShowBackup(false)}
+          />
+        )}
+
+        {/* ─── SAISIE ─── */}
+        {tab==="saisie" && <>
+          {/* Revenu */}
+          <div style={{background:C.surface,border:`1px solid ${C.border}`,
+            borderRadius:12,padding:14,marginBottom:12}}>
+            <label style={{fontSize:11,color:C.muted,display:"block",marginBottom:5}}>
+              Revenu brut annuel (comparaison abattement 10 %)
+              <Tooltip text="Pour comparer vos frais réels avec l'abattement forfaitaire de 10 % (plafonné à 14 555 € pour les revenus 2025, identique pour tous les salariés — aucun plafond spécifique pilotes)."/>
+            </label>
+            <div style={{position:"relative"}}>
+              <input type="number" placeholder="ex: 90000" value={revenu}
+                onChange={e=>setRevenu(e.target.value)} style={{...inputSt,paddingRight:30}}/>
+              <span style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",
+                fontSize:11,color:C.muted}}>€</span>
+            </div>
+          </div>
+
+          <div style={{fontSize:11,color:C.muted,marginBottom:10,textAlign:"center"}}>
+            {nbRempli} / {CATEGORIES.length+1} rubriques renseignées
+          </div>
+
+          {/* RUBRIQUE FRAIS EN COURRIER (module APM) */}
+          <div style={{
+            background:C.surface, borderRadius:12, marginBottom:8, overflow:"hidden",
+            border:`1px solid ${openCat==="courrier"?C.blue:C.border}`,
+          }}>
+            <div onClick={()=>setOpenCat(openCat==="courrier"?null:"courrier")} style={{
+              display:"flex",alignItems:"center",justifyContent:"space-between",
+              padding:"13px 16px",cursor:"pointer",
+              background:openCat==="courrier"?`${C.blue}0E`:"transparent",
+            }}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <span style={{fontSize:20}}>✈️</span>
+                <div>
+                  <div style={{fontSize:13,fontWeight:600,color:C.white}}>
+                    Frais en Courrier (Escales)
+                    <span style={{marginLeft:6,fontSize:9,background:`${C.gold}22`,color:C.gold,
+                      borderRadius:4,padding:"1px 6px",fontWeight:700,verticalAlign:"middle"}}>AUTO APM</span>
+                  </div>
+                  {totalCourrier>0 && <div style={{fontSize:11,color:C.blue,fontWeight:700}}>
+                    {fmt(totalCourrier)} · {rotations.length} rotation{rotations.length>1?"s":""}
+                  </div>}
+                </div>
+              </div>
+              <span style={{color:C.muted,fontSize:16,
+                transform:openCat==="courrier"?"rotate(180deg)":"none",transition:"transform 0.2s"}}>▾</span>
+            </div>
+            {openCat==="courrier" && (
+              <div style={{padding:"0 16px 16px"}}>
+                <p style={{fontSize:11,color:C.muted,lineHeight:1.5,margin:"0 0 12px",
+                  borderTop:`1px solid ${C.border}`,paddingTop:12}}>
+                  Dispositif DLF 15/02/1999 propre au PNT. Chargez vos relevés APM mensuels :
+                  les rotations, jours d'engagement et indemnités sont calculés automatiquement.
+                  Cas 1 : (jours − 0,5) indemnités, chacune au taux du pays de découcher
+                  (nuit à Marrakech = taux Maroc, à Londres = taux GB…), la demi-fraction
+                  s'affectant à la dernière nuitée. A/R journée : 0,5 × tarif Zone Euro.
+                  Cas 2 (découcher hors liste DLF) : jours pleins × taux pays.
+                </p>
+                <CourrierModule
+                  rotations={rotations} setRotations={setRotations}
+                  nuitees={nuitees} setNuitees={setNuitees}
+                  meta={meta} setMeta={setMeta}
+                  periodes={periodes} setPeriodes={setPeriodes}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* AUTRES RUBRIQUES */}
+          {CATEGORIES.map(cat=>(
+            <CatCard key={cat.id} cat={cat}
+              values={vals[cat.id]||{}}
+              onChange={(f,v)=>handleChange(cat.id,f,v)}
+              isOpen={openCat===cat.id}
+              onToggle={()=>setOpenCat(openCat===cat.id?null:cat.id)}
+            />
+          ))}
+
+          {/* JUSTIFICATIFS */}
+          <JustifCard
+            justifs={justifs} addJustif={addJustif} removeJustif={removeJustif}
+            isOpen={openCat==="justifs"}
+            onToggle={()=>setOpenCat(openCat==="justifs"?null:"justifs")}
+            backend={backend}
+          />
+        </>}
+
+        {/* ─── SYNTHESE ─── */}
+        {tab==="synthese" && (
+          <div>
+            <div style={{
+              background:`linear-gradient(135deg,${C.surface},${C.alt})`,
+              border:`1px solid ${C.gold}44`,borderRadius:14,padding:18,marginBottom:12,
+              textAlign:"center",
+            }}>
+              <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:2,marginBottom:4}}>
+                Total frais réels déductibles
+              </div>
+              <div style={{fontSize:38,fontWeight:800,color:C.gold,fontFamily:"monospace"}}>{fmt(grandTotal)}</div>
+              <div style={{fontSize:11,color:C.muted,marginTop:2}}>
+                {nbRempli} rubrique{nbRempli>1?"s":""} renseignée{nbRempli>1?"s":""}
+              </div>
+            </div>
+
+            {/* Barre de répartition */}
+            {grandTotal>0 && (
+              <div style={{marginBottom:14}}>
+                <div style={{height:8,background:C.border,borderRadius:4,overflow:"hidden",display:"flex"}}>
+                  {totalCourrier>0 && <div title="Frais en courrier"
+                    style={{height:"100%",width:`${(totalCourrier/grandTotal)*100}%`,background:C.blue}}/>}
+                  {catTotals.filter(c=>c.amount>0).map(c=>(
+                    <div key={c.id} title={c.short}
+                      style={{height:"100%",width:`${(c.amount/grandTotal)*100}%`,background:c.color}}/>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Détail */}
+            <div style={{background:C.surface,borderRadius:12,padding:14,marginBottom:12}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+                marginBottom:8,opacity:totalCourrier>0?1:0.35}}>
+                <span style={{fontSize:12,color:C.muted}}>✈️ Frais en courrier ({rotations.length} rot.)</span>
+                <span style={{fontSize:12,fontWeight:600,color:totalCourrier>0?C.blue:C.muted}}>{fmt(totalCourrier)}</span>
+              </div>
+              {catTotals.map(c=>(
+                <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+                  marginBottom:8,opacity:c.amount>0?1:0.35}}>
+                  <span style={{fontSize:12,color:C.muted}}>{c.icon} {c.short}</span>
+                  <span style={{fontSize:12,fontWeight:600,color:c.amount>0?c.color:C.muted}}>{fmt(c.amount)}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* À réintégrer au salaire (méthode mémento §1.8.2) */}
+            {totalReint>0 && (
+              <div style={{
+                background:`${C.amber}10`, border:`1px solid ${C.amber}33`,
+                borderRadius:10, padding:14, marginBottom:12,
+              }}>
+                <div style={{fontSize:11,color:C.amber,fontWeight:700,marginBottom:6}}>
+                  💼 À AJOUTER à votre salaire — lignes 1AJ à 1DJ
+                </div>
+                <div style={{fontSize:10,color:C.muted,lineHeight:1.5,marginBottom:8}}>
+                  Méthode mémento §1.8.2 : en frais réels, les indemnités et remboursements
+                  de l'employeur sont réintégrés au salaire déclaré. Vos frais restent
+                  déduits en intégralité.
+                </div>
+                {reintDetail.map((r,i)=>(
+                  <div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:3}}>
+                    <span style={{color:C.muted}}>{r.label}</span>
+                    <span style={{color:C.white}}>{fmt(r.amount)}</span>
+                  </div>
+                ))}
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:13,fontWeight:700,
+                  borderTop:`1px solid ${C.amber}33`,paddingTop:6,marginTop:4}}>
+                  <span style={{color:C.amber}}>Total à réintégrer (1AJ)</span>
+                  <span style={{color:C.amber}}>{fmt(totalReint)}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Comparaison forfait */}
+            {revenu>0 && (
+              <div style={{
+                background:gain>0?`${C.green}12`:`${C.red}12`,
+                border:`1px solid ${gain>0?C.green:C.red}33`,
+                borderRadius:10,padding:14,marginBottom:12,
+              }}>
+                <div style={{fontSize:11,color:C.muted,marginBottom:6}}>📊 Frais réels vs abattement 10 %</div>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}>
+                  <span style={{color:C.muted}}>Abattement forfaitaire</span>
+                  <span style={{color:C.white}}>{fmt(abattement)}</span>
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}>
+                  <span style={{color:C.muted}}>Vos frais réels déductibles</span>
+                  <span style={{color:C.white}}>{fmt(grandTotal)}</span>
+                </div>
+                {totalReint>0 && (
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:6}}>
+                    <span style={{color:C.amber}}>− Réintégration au salaire</span>
+                    <span style={{color:C.amber}}>−{fmt(totalReint)}</span>
+                  </div>
+                )}
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:14,fontWeight:700,
+                  borderTop:`1px solid ${C.border}`,paddingTop:6}}>
+                  <span style={{color:C.muted}}>{gain>0?"✅ Gain net frais réels":"⚠️ Avantage forfait"}</span>
+                  <span style={{color:gain>0?C.green:C.red}}>{gain>0?"+":""}{fmt(gain)}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Tableau rotations si présent */}
+            {rotations.length>0 && (
+              <div style={{background:C.surface,borderRadius:12,padding:14,marginBottom:12}}>
+                <div style={{fontSize:12,fontWeight:600,color:C.white,marginBottom:8}}>
+                  ✈️ Détail rotations (pièce justificative)
+                </div>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
+                  <thead><tr style={{borderBottom:`1px solid ${C.border}`}}>
+                    {["Mois","Jours","Trajet","Cas","Ind.","Taux","Montant"].map(h=>(
+                      <th key={h} style={{padding:"3px 5px",textAlign:"left",color:C.muted,fontWeight:600}}>{h}</th>
+                    ))}
+                  </tr></thead>
+                  <tbody>
+                    {rotations.map((r,i)=>{
+                      const c2=r.cas===2||r.isCas2;
+                      return (
+                        <tr key={i} style={{borderBottom:`1px solid ${C.border}22`}}>
+                          <td style={{padding:"4px 5px",color:C.muted,fontSize:9,maxWidth:50,
+                            overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                            {r.periode ? r.periode.split(" ")[0].substring(0,4) : "—"}
+                          </td>
+                          <td style={{padding:"4px 5px",color:C.muted,fontFamily:"monospace"}}>
+                            {String(r.premier_jour).padStart(2,"0")}→{String(r.dernier_jour).padStart(2,"0")}
+                          </td>
+                          <td style={{padding:"4px 5px",color:C.white,maxWidth:80,overflow:"hidden",
+                            textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.trajet_resume}</td>
+                          <td style={{padding:"4px 5px",color:c2?C.amber:C.blue,fontWeight:700}}>C{c2?"2":"1"}</td>
+                          <td style={{padding:"4px 5px",color:C.white}}>{r.nb_indemnites}</td>
+                          <td style={{padding:"4px 5px",color:C.white}}>{r.taux}€</td>
+                          <td style={{padding:"4px 5px",color:C.gold,fontWeight:700}}>{fmt(r.montant)}</td>
+                        </tr>
+                      );
+                    })}
+                    {nuiteesEff>0 && (
+                      <tr><td colSpan={6} style={{padding:"4px 5px",color:C.amber}}>Nuitées employeur → à ajouter au salaire 1AJ</td>
+                      <td style={{padding:"4px 5px",color:C.amber}}>{fmt(nuiteesEff)}</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Bouton dossier fiscal imprimable */}
+            <button onClick={()=>setPrintMode(true)} style={{
+              width:"100%", marginBottom:12,
+              background:C.gold, color:"#000", border:"none",
+              borderRadius:10, padding:"13px",
+              fontSize:13, fontWeight:800, cursor:"pointer",
+            }}>
+              🖨️ Générer le dossier fiscal imprimable (PDF)
+            </button>
+            <div style={{fontSize:9,color:C.muted,textAlign:"center",marginBottom:12,lineHeight:1.4}}>
+              Synthèse complète + justificatifs, prêt à imprimer ou enregistrer en PDF
+              en cas de contrôle fiscal.
+            </div>
+
+            <div style={{background:C.surface,borderRadius:10,padding:12,fontSize:10,
+              color:C.muted,lineHeight:1.6}}>
+              <strong style={{color:C.amber}}>⚠️ Avertissement SNPL :</strong> calculs fournis à titre
+              indicatif syndical. Le contribuable demeure seul responsable de sa déclaration.
+              Conserver tous les justificatifs au moins 3 ans.
+            </div>
+          </div>
+        )}
+
+        {/* ─── LEGAL ─── */}
+        {tab==="legal" && (
+          <div>
+            {[
+              {t:"Conditions générales",icon:"📋",items:[
+                "Dépenses dans le seul but d'acquérir ou conserver des revenus professionnels",
+                "Payées au cours de l'année d'imposition, justifiées par pièces probantes",
+                "Option utile seulement si > 10 % des revenus (min 509 €, max 14 555 € pour les revenus 2025)",
+              ]},
+              {t:"Frais en Courrier — DLF 15/02/1999",icon:"✈️",items:[
+                "Dispositif propre au PNT, option indivisible pour l'année civile",
+                "Cas 1 (pays liste 1a : France, limitrophes…) : (X − 0,5) indemnités",
+                "Le taux de chaque indemnité = pays du DÉCOUCHER (ex. n°5-7 : nuit à Copenhague → taux Danemark)",
+                "La fraction 0,5 s'affecte par convention à la dernière nuitée",
+                "Aller-retour journée sans découcher : 0,5 indemnité au tarif Zone Euro (base)",
+                "Cas 2 (pays hors liste, arrêt ≥7h) : X jours × indemnité du pays",
+                "Exclus : réserves, standby, visites médicales, activités sol à la base",
+                "Nuitées payées par l'employeur OBLIGATOIREMENT réintégrées",
+                "Justificatif : carnet de vol ou relevé récapitulatif employeur (relevé APM)",
+              ]},
+              {t:"Distance domicile-travail",icon:"🗺️",items:[
+                "< 40 km : déduction de plein droit",
+                "> 40 km : circonstances particulières requises (activité conjoint, santé, scolarité…)",
+                "Base ORY/CDG acceptée comme circonstance pour les pilotes",
+              ]},
+              {t:"Double résidence",icon:"🏠",items:[
+                "Mariage/PACS : conjoint travaillant près du domicile principal",
+                "Concubinage : stabilité à justifier (bail commun, enfant…)",
+                "1 aller-retour hebdomadaire vers le domicile familial admis",
+              ]},
+              {t:"Assurance perte de licence",icon:"🏛️",items:[
+                "Déductible si souscrite à titre PERSONNEL (facultative)",
+                "Capital versé non imposable (préjudice moral)",
+                "Rescrit fiscal disponible auprès du service juridique SNPL",
+              ]},
+              {t:"Contrôle fiscal",icon:"⚠️",items:[
+                "Délai de reprise : 3 ans en général",
+                "Conserver TOUS les justificatifs au moins 3 ans",
+                "Intérêts de retard : 0,20 %/mois",
+              ]},
+            ].map((s,i)=><LegalSection key={i} {...s}/>)}
+            <div style={{background:`${C.gold}10`,border:`1px solid ${C.gold}33`,
+              borderRadius:12,padding:13,fontSize:10,color:C.muted,lineHeight:1.7}}>
+              <strong style={{color:C.gold}}>📞 SNPL France ALPA</strong> — 01 49 89 24 00 — www.snpl.com<br/>
+              <strong style={{color:C.gold}}>📖 Références :</strong> Lettre DLF 15/02/1999 + Annexe ·
+              BOI-RSA-BASE-30-50-30-20 · BOI-RSA-BASE-30-50-30-40 · Art. 83 CGI
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function LegalSection({ t, icon, items }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{background:C.surface,border:`1px solid ${C.border}`,
+      borderRadius:12,marginBottom:8,overflow:"hidden"}}>
+      <div onClick={()=>setOpen(!open)} style={{
+        display:"flex",justifyContent:"space-between",alignItems:"center",
+        padding:"12px 14px",cursor:"pointer"}}>
+        <span style={{fontSize:12,fontWeight:600,color:C.white}}>{icon} {t}</span>
+        <span style={{color:C.muted,transform:open?"rotate(180deg)":"none",transition:"0.2s"}}>▾</span>
+      </div>
+      {open && (
+        <div style={{padding:"0 14px 12px",borderTop:`1px solid ${C.border}`}}>
+          <ul style={{margin:"10px 0 0",padding:"0 0 0 14px"}}>
+            {items.map((it,i)=>(
+              <li key={i} style={{fontSize:11,color:C.muted,lineHeight:1.7}}>{it}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── PANNEAU SAUVEGARDE / RESTAURATION ───────────────────────────
+function BackupPanel({ exportJSON, importJSON, backend, onClose }) {
+  const [mode, setMode] = useState("export"); // export | import
+  const [importTxt, setImportTxt] = useState("");
+  const [msg, setMsg] = useState("");
+  const [withJustifs, setWithJustifs] = useState(true);
+  const taRef = useRef();
+  const data = exportJSON(withJustifs);
+  const sizeKo = Math.round(data.length/1024);
+
+  // Copie fiable : Clipboard API → execCommand → sélection manuelle
+  const copyToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(data);
+      setMsg("✅ Copié dans le presse-papiers !");
+    } catch(e1) {
+      try {
+        const ta = taRef.current;
+        ta.focus(); ta.select(); ta.setSelectionRange(0, data.length);
+        const ok = document.execCommand("copy");
+        setMsg(ok ? "✅ Copié !" : "Texte sélectionné — appuyez longuement → Copier.");
+      } catch(e2) {
+        taRef.current?.select();
+        setMsg("Texte sélectionné — appuyez longuement → Copier.");
+      }
+    }
+    setTimeout(()=>setMsg(""), 4000);
+  };
+
+  // Téléchargement en fichier .json
+  const downloadFile = () => {
+    try {
+      const blob = new Blob([data], { type:"application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `frais-reels-pn-${new Date().toISOString().slice(0,10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+      setMsg("✅ Fichier téléchargé (voir Fichiers / Téléchargements).");
+    } catch(e) {
+      setMsg("⚠️ Téléchargement bloqué ici — utilisez la copie de texte.");
+    }
+    setTimeout(()=>setMsg(""), 4000);
+  };
+
+  // Import par fichier
+  const fileRef = useRef();
+  const onImportFile = async (f) => {
+    if (!f) return;
+    const txt = await f.text();
+    setImportTxt(txt);
+  };
+
+  const doImport = async () => {
+    const ok = await importJSON(importTxt.trim());
+    if (ok) {
+      setMsg("✅ Données restaurées !");
+      setImportTxt("");
+      setTimeout(()=>{ setMsg(""); onClose(); }, 1500);
+    } else {
+      setMsg("❌ Format invalide. Collez une sauvegarde exportée depuis cette application.");
+    }
+  };
+
+  return (
+    <div style={{
+      background:C.surface, border:`1px solid ${C.gold}44`,
+      borderRadius:12, padding:14, marginBottom:14,
+    }}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+        <span style={{fontSize:13,fontWeight:700,color:C.gold}}>🔐 Sauvegarde de vos données</span>
+        <button onClick={onClose} style={{background:"none",border:"none",color:C.muted,fontSize:16,cursor:"pointer"}}>×</button>
+      </div>
+
+      <div style={{fontSize:10,color:C.muted,lineHeight:1.5,marginBottom:10}}>
+        {backend==="memoire"
+          ? "⚠️ Le stockage automatique n'est pas disponible ici : exportez vos données avant de fermer !"
+          : "Exportez pour transférer vers une autre version ou un autre appareil, ou simplement par sécurité avant la déclaration."}
+      </div>
+
+      <div style={{display:"flex",gap:6,marginBottom:10}}>
+        {[["export","📤 Exporter"],["import","📥 Restaurer"]].map(([m,label])=>(
+          <button key={m} onClick={()=>{setMode(m);setMsg("")}} style={{
+            flex:1, padding:"8px 0", borderRadius:8, cursor:"pointer",
+            background:mode===m?C.gold:C.alt, color:mode===m?"#000":C.muted,
+            border:"none", fontSize:11, fontWeight:mode===m?700:400,
+          }}>{label}</button>
+        ))}
+      </div>
+
+      {mode==="export" ? (
+        <>
+          <label style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:C.muted,marginBottom:8,cursor:"pointer"}}>
+            <input type="checkbox" checked={withJustifs} onChange={e=>setWithJustifs(e.target.checked)}/>
+            Inclure les justificatifs (photos) — taille : {sizeKo} ko
+          </label>
+          <div style={{display:"flex",gap:6,marginBottom:8}}>
+            <button onClick={copyToClipboard} style={{
+              flex:1, background:C.alt, border:`1px solid ${C.border}`,
+              borderRadius:8, padding:"9px", color:C.white,
+              fontSize:11, fontWeight:600, cursor:"pointer",
+            }}>📋 Copier</button>
+            <button onClick={downloadFile} style={{
+              flex:1, background:C.gold, border:"none",
+              borderRadius:8, padding:"9px", color:"#000",
+              fontSize:11, fontWeight:700, cursor:"pointer",
+            }}>💾 Télécharger .json</button>
+          </div>
+          <textarea ref={taRef} readOnly value={data} onClick={e=>e.target.select()} style={{
+            width:"100%", boxSizing:"border-box", height:60,
+            background:C.bg, border:`1px solid ${C.border}`, borderRadius:8,
+            padding:8, color:C.muted, fontSize:9, fontFamily:"monospace", resize:"none",
+          }}/>
+          <div style={{fontSize:9,color:C.muted,marginTop:4,lineHeight:1.4}}>
+            Le fichier .json est la méthode la plus sûre (Fichiers, iCloud, e-mail).
+            La copie de texte convient pour les petites sauvegardes.
+          </div>
+        </>
+      ) : (
+        <>
+          <input ref={fileRef} type="file" accept=".json,application/json"
+            onChange={e=>onImportFile(e.target.files[0])} style={{display:"none"}}/>
+          <button onClick={()=>fileRef.current?.click()} style={{
+            width:"100%", background:C.alt, border:`1px solid ${C.border}`,
+            borderRadius:8, padding:"9px", color:C.white,
+            fontSize:11, fontWeight:600, cursor:"pointer", marginBottom:8,
+          }}>📂 Choisir un fichier .json</button>
+          <textarea placeholder="…ou collez ici votre sauvegarde" value={importTxt}
+            onChange={e=>setImportTxt(e.target.value)} style={{
+            width:"100%", boxSizing:"border-box", height:60,
+            background:C.bg, border:`1px solid ${C.border}`, borderRadius:8,
+            padding:8, color:C.white, fontSize:9, fontFamily:"monospace", resize:"none",
+          }}/>
+          <button onClick={doImport} disabled={!importTxt.trim()} style={{
+            width:"100%", marginTop:8,
+            background:importTxt.trim()?C.gold:C.border,
+            color:importTxt.trim()?"#000":C.muted,
+            border:"none", borderRadius:8, padding:"9px",
+            fontSize:11, fontWeight:700, cursor:importTxt.trim()?"pointer":"default",
+          }}>Restaurer ces données</button>
+        </>
+      )}
+
+      {msg && <div style={{fontSize:10,color:msg.startsWith("✅")?C.green:C.amber,marginTop:6}}>{msg}</div>}
+    </div>
+  );
+}
+
+// ─── CARTE JUSTIFICATIFS (archivage photos / PDF) ────────────────
+function JustifCard({ justifs, addJustif, removeJustif, isOpen, onToggle, backend }) {
+  const [catSel, setCatSel] = useState("courrier");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [viewer, setViewer] = useState(null); // justif en plein écran
+  const fileRef = useRef();
+
+  const totalSize = justifs.reduce((s,j)=>s+(j.data?.length||0),0);
+  const sizeMB = (totalSize/1024/1024).toFixed(1);
+
+  const onFiles = async (files) => {
+    setBusy(true); setErr("");
+    for (const f of files) {
+      try { await addJustif(catSel, f); }
+      catch(e) { setErr(e.message); }
+    }
+    setBusy(false);
+  };
+
+  const byCat = {};
+  justifs.forEach(j=>{ (byCat[j.catId]=byCat[j.catId]||[]).push(j); });
+
+  return (
+    <div style={{
+      background:C.surface, borderRadius:12, marginBottom:8, overflow:"hidden",
+      border:`1px solid ${isOpen?C.gold:C.border}`,
+    }}>
+      <div onClick={onToggle} style={{
+        display:"flex",alignItems:"center",justifyContent:"space-between",
+        padding:"13px 16px",cursor:"pointer",
+        background:isOpen?`${C.gold}0E`:"transparent",
+      }}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontSize:20}}>📎</span>
+          <div>
+            <div style={{fontSize:13,fontWeight:600,color:C.white}}>Justificatifs archivés</div>
+            {justifs.length>0 && (
+              <div style={{fontSize:11,color:C.gold,fontWeight:700}}>
+                {justifs.length} pièce{justifs.length>1?"s":""} · {sizeMB} Mo
+              </div>
+            )}
+          </div>
+        </div>
+        <span style={{color:C.muted,fontSize:16,transform:isOpen?"rotate(180deg)":"none",transition:"transform 0.2s"}}>▾</span>
+      </div>
+
+      {isOpen && (
+        <div style={{padding:"0 16px 16px"}}>
+          <p style={{fontSize:11,color:C.muted,lineHeight:1.5,margin:"0 0 12px",
+            borderTop:`1px solid ${C.border}`,paddingTop:12}}>
+            Photographiez vos factures et notes au fil de l'année : tout est archivé
+            ici (compressé) et intégré au dossier fiscal imprimable. Conservez les
+            originaux 3 ans.
+          </p>
+
+          {/* Sélecteur de rubrique + ajout */}
+          <select value={catSel} onChange={e=>setCatSel(e.target.value)} style={{
+            width:"100%", boxSizing:"border-box", background:C.alt,
+            border:`1px solid ${C.border}`, borderRadius:8,
+            padding:"9px 12px", color:C.white, fontSize:12, marginBottom:8,
+          }}>
+            {JUSTIF_CATS.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
+          </select>
+
+          <input ref={fileRef} type="file" accept="image/*,application/pdf" multiple
+            onChange={e=>{onFiles([...e.target.files]); e.target.value="";}}
+            style={{display:"none"}}/>
+          <button onClick={()=>fileRef.current?.click()} disabled={busy} style={{
+            width:"100%", background:C.gold, color:"#000", border:"none",
+            borderRadius:8, padding:"11px", fontSize:12, fontWeight:700,
+            cursor:busy?"default":"pointer", opacity:busy?0.6:1,
+          }}>
+            {busy ? "⏳ Compression…" : "📷 Photographier / ajouter un justificatif"}
+          </button>
+          {err && <div style={{fontSize:10,color:C.red,marginTop:6}}>❌ {err}</div>}
+          {backend==="claude" && sizeMB>3.5 && (
+            <div style={{fontSize:9,color:C.amber,marginTop:6,lineHeight:1.4}}>
+              ⚠️ Archive volumineuse ({sizeMB} Mo) : pensez à exporter régulièrement
+              (🔐 Sauvegarde) pour ne rien perdre.
+            </div>
+          )}
+
+          {/* Liste par rubrique */}
+          {Object.entries(byCat).map(([catId, items])=>{
+            const cat = JUSTIF_CATS.find(c=>c.id===catId);
+            return (
+              <div key={catId} style={{marginTop:12}}>
+                <div style={{fontSize:10,color:C.muted,fontWeight:600,
+                  textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>
+                  {cat?.label||catId}
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6}}>
+                  {items.map(j=>(
+                    <div key={j.id} style={{position:"relative"}}>
+                      <div onClick={()=>setViewer(j)} style={{
+                        height:70, borderRadius:8, overflow:"hidden",
+                        background:C.alt, border:`1px solid ${C.border}`,
+                        cursor:"pointer", display:"flex",
+                        alignItems:"center", justifyContent:"center",
+                      }}>
+                        {j.mime.startsWith("image/")
+                          ? <img src={j.data} alt={j.name} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                          : <span style={{fontSize:24}}>📄</span>}
+                      </div>
+                      <button onClick={()=>removeJustif(j.id)} style={{
+                        position:"absolute", top:-5, right:-5,
+                        width:18, height:18, borderRadius:"50%",
+                        background:C.red, color:"#fff", border:"none",
+                        fontSize:11, lineHeight:"18px", cursor:"pointer", padding:0,
+                      }}>×</button>
+                      <div style={{fontSize:8,color:C.muted,marginTop:2,
+                        overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                        {j.date} {j.name}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Visionneuse plein écran */}
+          {viewer && (
+            <div onClick={()=>setViewer(null)} style={{
+              position:"fixed", inset:0, zIndex:200,
+              background:"rgba(0,0,0,0.92)",
+              display:"flex", flexDirection:"column",
+              alignItems:"center", justifyContent:"center", padding:16,
+            }}>
+              {viewer.mime.startsWith("image/")
+                ? <img src={viewer.data} alt={viewer.name}
+                    style={{maxWidth:"100%",maxHeight:"80vh",borderRadius:8}}/>
+                : <iframe src={viewer.data} title={viewer.name}
+                    style={{width:"100%",height:"80vh",border:"none",borderRadius:8,background:"#fff"}}/>}
+              <div style={{color:C.white,fontSize:12,marginTop:10}}>{viewer.name} — toucher pour fermer</div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── DOSSIER FISCAL IMPRIMABLE ───────────────────────────────────
+function DossierFiscal(props) {
+  const { rotations, catTotals, totalCourrier, grandTotal, nuiteesEff,
+          reintDetail, totalReint, abattement, gain, revenu,
+          meta, periodes, justifs, onBack } = props;
+  const annee = meta?.periode?.match(/\d{4}/)?.[0] || new Date().getFullYear();
+  const euro = n => new Intl.NumberFormat("fr-FR",{style:"currency",currency:"EUR"}).format(n||0);
+
+  return (
+    <div style={{background:"#fff",color:"#111",minHeight:"100vh",
+      fontFamily:"Georgia,'Times New Roman',serif"}}>
+      <style>{`
+        @media print {
+          .no-print { display:none !important; }
+          .page-break { page-break-before:always; }
+          body { background:#fff; }
+        }
+        .dossier table { width:100%; border-collapse:collapse; font-size:12px; }
+        .dossier th, .dossier td { border:1px solid #999; padding:5px 8px; text-align:left; }
+        .dossier th { background:#eee; }
+      `}</style>
+
+      {/* Barre d'actions (masquée à l'impression) */}
+      <div className="no-print" style={{
+        position:"sticky", top:0, background:"#1a1a2e", padding:"12px 16px",
+        display:"flex", gap:10, zIndex:10,
+      }}>
+        <button onClick={onBack} style={{
+          background:"none", border:"1px solid #888", color:"#fff",
+          borderRadius:8, padding:"8px 16px", fontSize:13, cursor:"pointer",
+        }}>← Retour</button>
+        <button onClick={()=>window.print()} style={{
+          flex:1, background:"#D4A017", border:"none", color:"#000",
+          borderRadius:8, padding:"8px 16px", fontSize:13, fontWeight:700, cursor:"pointer",
+        }}>🖨️ Imprimer / Enregistrer en PDF</button>
+      </div>
+
+      <div className="dossier" style={{maxWidth:760, margin:"0 auto", padding:"30px 24px"}}>
+        {/* En-tête */}
+        <div style={{textAlign:"center", borderBottom:"3px double #333", paddingBottom:16, marginBottom:20}}>
+          <div style={{fontSize:22, fontWeight:700}}>DOSSIER FRAIS RÉELS — PERSONNEL NAVIGANT</div>
+          <div style={{fontSize:13, marginTop:6}}>
+            Déclaration des revenus {annee} · Option frais réels (art. 83-3° CGI)
+          </div>
+          {meta?.pilote && <div style={{fontSize:13, marginTop:4}}><strong>{meta.pilote}</strong>{meta.base?` — Base ${meta.base}`:""}</div>}
+          <div style={{fontSize:11, color:"#555", marginTop:4}}>
+            Établi le {new Date().toLocaleDateString("fr-FR")} ·
+            Relevés intégrés : {periodes.length>0?periodes.join(", "):"—"}
+          </div>
+        </div>
+
+        {/* 1. Synthèse générale */}
+        <h2 style={{fontSize:16, borderBottom:"1px solid #333", paddingBottom:4}}>1. Synthèse des frais déductibles (case 1AK)</h2>
+        <table>
+          <thead><tr><th>Rubrique</th><th style={{textAlign:"right"}}>Montant</th></tr></thead>
+          <tbody>
+            {totalCourrier>0 && <tr><td>Frais en courrier — dispositif PNT (lettre DLF 15/02/1999)</td>
+              <td style={{textAlign:"right"}}>{euro(totalCourrier)}</td></tr>}
+            {catTotals.filter(c=>c.amount>0).map(c=>(
+              <tr key={c.id}><td>{c.label}</td><td style={{textAlign:"right"}}>{euro(c.amount)}</td></tr>
+            ))}
+            <tr style={{fontWeight:700, background:"#f5f5f5"}}>
+              <td>TOTAL FRAIS RÉELS DÉDUCTIBLES (à reporter case 1AK)</td>
+              <td style={{textAlign:"right"}}>{euro(grandTotal)}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        {/* 2. Réintégration */}
+        {totalReint>0 && <>
+          <h2 style={{fontSize:16, borderBottom:"1px solid #333", paddingBottom:4, marginTop:24}}>
+            2. Sommes réintégrées au salaire (ajoutées ligne 1AJ)
+          </h2>
+          <table>
+            <tbody>
+              {reintDetail.map((r,i)=>(
+                <tr key={i}><td>{r.label}</td><td style={{textAlign:"right"}}>{euro(r.amount)}</td></tr>
+              ))}
+              <tr style={{fontWeight:700, background:"#f5f5f5"}}>
+                <td>TOTAL AJOUTÉ AU SALAIRE DÉCLARÉ</td>
+                <td style={{textAlign:"right"}}>{euro(totalReint)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </>}
+
+        {/* 3. Détail des rotations */}
+        {rotations.length>0 && <>
+          <h2 style={{fontSize:16, borderBottom:"1px solid #333", paddingBottom:4, marginTop:24}}>
+            3. Détail des rotations — frais en courrier
+          </h2>
+          <p style={{fontSize:11, color:"#444"}}>
+            Méthode : lettre DLF du 15/02/1999. Cas 1 (pays liste §1a) : (X jours − 0,5)
+            indemnités au tarif du pays de découcher. Cas 2 (hors liste, arrêt ≥7h) :
+            X indemnités. Nuitées réglées par l'employeur réintégrées au salaire
+            (tarif Transavia {annee}).
+          </p>
+          <table>
+            <thead><tr>
+              <th>Mois</th><th>Jours</th><th>Rotation</th><th>Cas</th>
+              <th>Ind.</th><th>Taux</th><th style={{textAlign:"right"}}>Déduction</th>
+              <th style={{textAlign:"right"}}>Nuitées empl.</th>
+            </tr></thead>
+            <tbody>
+              {rotations.map((r,i)=>(
+                <tr key={i}>
+                  <td>{r.periode?.split(" ")[0]||"—"}</td>
+                  <td>{String(r.premier_jour).padStart(2,"0")}→{String(r.dernier_jour).padStart(2,"0")}</td>
+                  <td style={{fontSize:10}}>{r.trajet_resume}</td>
+                  <td>C{r.cas===2||r.isCas2?"2":"1"}</td>
+                  <td>{r.nb_indemnites}</td>
+                  <td>{r.taux} €</td>
+                  <td style={{textAlign:"right"}}>{euro(r.montant)}</td>
+                  <td style={{textAlign:"right"}}>{euro(r.nuiteesMontant||0)}</td>
+                </tr>
+              ))}
+              <tr style={{fontWeight:700, background:"#f5f5f5"}}>
+                <td colSpan={6}>TOTAUX</td>
+                <td style={{textAlign:"right"}}>{euro(totalCourrier)}</td>
+                <td style={{textAlign:"right"}}>{euro(nuiteesEff)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </>}
+
+        {/* 4. Comparaison */}
+        {revenu>0 && <>
+          <h2 style={{fontSize:16, borderBottom:"1px solid #333", paddingBottom:4, marginTop:24}}>
+            4. Comparaison avec l'abattement forfaitaire
+          </h2>
+          <table>
+            <tbody>
+              <tr><td>Revenu brut déclaré</td><td style={{textAlign:"right"}}>{euro(revenu)}</td></tr>
+              <tr><td>Abattement forfaitaire 10 % (plafonné)</td><td style={{textAlign:"right"}}>{euro(abattement)}</td></tr>
+              <tr><td>Frais réels nets (déduction − réintégration)</td><td style={{textAlign:"right"}}>{euro(grandTotal-totalReint)}</td></tr>
+              <tr style={{fontWeight:700, background:"#f5f5f5"}}>
+                <td>{gain>0?"AVANTAGE NET OPTION FRAIS RÉELS":"AVANTAGE FORFAIT (option non retenue)"}</td>
+                <td style={{textAlign:"right"}}>{euro(Math.abs(gain))}</td>
+              </tr>
+            </tbody>
+          </table>
+        </>}
+
+        {/* 5. Justificatifs */}
+        {justifs.length>0 && <>
+          <div className="page-break"/>
+          <h2 style={{fontSize:16, borderBottom:"1px solid #333", paddingBottom:4, marginTop:24}}>
+            5. Pièces justificatives ({justifs.length})
+          </h2>
+          {JUSTIF_CATS.map(cat=>{
+            const items = justifs.filter(j=>j.catId===cat.id);
+            if (!items.length) return null;
+            return (
+              <div key={cat.id} style={{marginTop:16}}>
+                <h3 style={{fontSize:13}}>{cat.label}</h3>
+                {items.map(j=>(
+                  <div key={j.id} style={{marginBottom:14, pageBreakInside:"avoid"}}>
+                    <div style={{fontSize:10, color:"#555", marginBottom:4}}>
+                      {j.date} — {j.name}
+                    </div>
+                    {j.mime.startsWith("image/")
+                      ? <img src={j.data} alt={j.name}
+                          style={{maxWidth:"100%", maxHeight:600, border:"1px solid #ccc"}}/>
+                      : <div style={{border:"1px dashed #999", padding:10, fontSize:11, color:"#666"}}>
+                          📄 Document PDF joint : « {j.name} » — à imprimer séparément
+                          depuis l'application (toucher la vignette puis imprimer).
+                        </div>}
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </>}
+
+        {/* Pied de page */}
+        <div style={{marginTop:30, paddingTop:12, borderTop:"1px solid #999",
+          fontSize:10, color:"#555", lineHeight:1.6}}>
+          Références : lettre DLF n°99002172 du 15 février 1999 et son Annexe ·
+          BOI-RSA-BASE-30-50-30-20 · BOI-RSA-BASE-30-50-30-40 · Art. 83-3° CGI.
+          Document établi avec l'application Frais Réels PN d'après le Mémento Fiscal
+          SNPL France ALPA. Le contribuable demeure seul responsable de sa déclaration.
+          Justificatifs originaux conservés {Number(annee)+3 ? `jusqu'en ${Number(annee)+4}` : "3 ans"}.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── MONTAGE ─────────────────────────────────────────────────────
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
