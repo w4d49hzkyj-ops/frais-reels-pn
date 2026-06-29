@@ -6,41 +6,104 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0B1220">
-<title>Frais Réels PNT — SNPL Mémento Fiscal</title>
+<title>Frais Réels PN</title>
 <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>✈️</text></svg>">
-<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <style>
   html,body{margin:0;padding:0;background:#0B1220;}
   #root{min-height:100vh;}
   *{-webkit-tap-highlight-color:transparent;}
-  input{font-family:inherit;}
+  input,select,textarea{font-family:inherit;}
+  #boot{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+    flex-direction:column;color:#6B85A8;font-family:-apple-system,sans-serif;padding:24px;text-align:center;}
+  #boot .spin{width:36px;height:36px;border:3px solid #1F3455;border-top-color:#D4A017;
+    border-radius:50%;animation:s 0.8s linear infinite;margin-bottom:16px;}
+  @keyframes s{to{transform:rotate(360deg)}}
+  #err{display:none;position:fixed;inset:0;background:#0B1220;color:#F0F4FA;
+    font-family:-apple-system,sans-serif;padding:24px;overflow:auto;box-sizing:border-box;}
+  #err h2{color:#EF4444;font-size:16px;}
+  #err pre{background:#131D2E;border:1px solid #1F3455;border-radius:8px;padding:12px;
+    font-size:11px;white-space:pre-wrap;color:#F59E0B;}
+  #err button{background:#D4A017;color:#000;border:none;border-radius:8px;
+    padding:10px 20px;font-size:14px;font-weight:700;margin-top:12px;}
 </style>
 </head>
 <body>
 <div id="root"></div>
+<div id="boot"><div class="spin"></div><div>Chargement de l'application…</div>
+  <div style="font-size:11px;margin-top:8px;opacity:0.7">Si rien ne s'affiche après 10 s, touchez pour recharger</div></div>
+<div id="err"><h2>⚠️ Erreur au démarrage</h2>
+  <p style="font-size:12px;color:#6B85A8">Détail technique (faites une capture et envoyez-la) :</p>
+  <pre id="errmsg"></pre>
+  <button onclick="location.reload()">Recharger</button>
+</div>
 <script>
-// ─── SHIM STOCKAGE ───────────────────────────────────────────────
-// Remplace window.storage (API Claude) par localStorage du navigateur.
-// Les données restent sur CET appareil/navigateur.
-window.storage = {
-  get: async (key) => {
-    const v = localStorage.getItem("fr-pnt:" + key);
-    if (v === null) throw new Error("not found");
-    return { key, value: v };
-  },
-  set: async (key, value) => {
-    localStorage.setItem("fr-pnt:" + key, value);
-    return { key, value };
-  },
-  delete: async (key) => {
-    localStorage.removeItem("fr-pnt:" + key);
-    return { key, deleted: true };
-  },
+// Affiche toute erreur à l'écran au lieu d'un écran noir
+window.__showErr = function(msg){
+  document.getElementById("boot").style.display="none";
+  document.getElementById("err").style.display="block";
+  document.getElementById("errmsg").textContent = String(msg);
 };
+window.addEventListener("error", function(e){
+  window.__showErr((e.message||"erreur")+"\n"+(e.filename||"")+":"+(e.lineno||""));
+});
+window.addEventListener("unhandledrejection", function(e){
+  window.__showErr("Promesse rejetée : "+(e.reason&&e.reason.message||e.reason));
+});
+// Recharge si on touche l'écran de boot (au cas où Babel traîne)
+document.getElementById("boot").addEventListener("click", function(){ location.reload(); });
+
+// ─── SHIM STOCKAGE (localStorage) ───
+window.storage = {
+  get: async (key) => { const v = localStorage.getItem("fr-pnt:"+key);
+    if (v === null) throw new Error("not found"); return { key, value: v }; },
+  set: async (key, value) => { localStorage.setItem("fr-pnt:"+key, value); return { key, value }; },
+  delete: async (key) => { localStorage.removeItem("fr-pnt:"+key); return { key, deleted: true }; },
+};
+
+// Chargement séquentiel des librairies avec source de secours
+function loadScript(urls){
+  return new Promise(function(resolve, reject){
+    var i = 0;
+    function tryNext(){
+      if (i >= urls.length){ reject(new Error("Impossible de charger : "+urls[0])); return; }
+      var s = document.createElement("script");
+      s.src = urls[i];
+      s.onload = function(){ resolve(); };
+      s.onerror = function(){ i++; tryNext(); };
+      document.head.appendChild(s);
+    }
+    tryNext();
+  });
+}
+
+(async function(){
+  try {
+    await loadScript([
+      "https://unpkg.com/react@18/umd/react.production.min.js",
+      "https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js",
+      "https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"
+    ]);
+    await loadScript([
+      "https://unpkg.com/react-dom@18/umd/react-dom.production.min.js",
+      "https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js",
+      "https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"
+    ]);
+    await loadScript([
+      "https://unpkg.com/@babel/standalone/babel.min.js",
+      "https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js",
+      "https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.26.4/babel.min.js"
+    ]);
+    // Transpiler et exécuter le code JSX
+    var code = document.getElementById("app-code").textContent;
+    var out = Babel.transform(code, { presets: ["react"] }).code;
+    new Function(out)();
+    document.getElementById("boot").style.display = "none";
+  } catch(e){
+    window.__showErr("Chargement : "+(e.message||e));
+  }
+})();
 </script>
-<script type="text/babel" data-presets="react">
+<script type="text/plain" id="app-code">
 const { useState, useRef, useCallback, useEffect } = React;
 
 // ─── PALETTE ────────────────────────────────────────────────────
@@ -2104,8 +2167,7 @@ function DossierFiscal(props) {
   );
 }
 
-// ─── MONTAGE ─────────────────────────────────────────────────────
-ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
 </script>
 </body>
 </html>
