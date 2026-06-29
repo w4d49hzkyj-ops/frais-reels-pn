@@ -52,8 +52,8 @@ window.storage = {
 </script>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-<script type="text/babel" data-presets="react">
+<script src="https://unpkg.com/@babel/standalone@7.23.6/babel.min.js"></script>
+<script type="text/babel" data-presets="react" data-type="script">
 const { useState, useRef, useCallback, useEffect } = React;
 
 // ─── PALETTE ────────────────────────────────────────────────────
@@ -2117,9 +2117,16 @@ function DossierFiscal(props) {
   );
 }
 
-const __root = ReactDOM.createRoot(document.getElementById("root"));
-__root.render(React.createElement(App));
-document.getElementById("boot").style.display = "none";
+try {
+  const __root = ReactDOM.createRoot(document.getElementById("root"));
+  __root.render(React.createElement(App));
+  // Laisser un tick à React pour monter, puis masquer le loader
+  setTimeout(function(){
+    var b=document.getElementById("boot"); if(b) b.style.display="none";
+  }, 400);
+} catch (e) {
+  window.__showErr("Rendu : " + (e && e.stack || e && e.message || e));
+}
 </script>
 </body>
 </html>
